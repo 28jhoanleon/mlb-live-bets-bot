@@ -16,6 +16,8 @@ from app.analysis.live_tracking import get_live_tracking_for_match, track_leg_li
 from app.analysis.probability import ProbabilityError, estimate_leg_detail, estimate_leg_probability
 from app.analysis.tickets import normalize
 from app.db.database import get_active_bet
+from app.mlb.estados import CON_DATOS as _CON_DATOS
+from app.mlb.estados import TERMINADO as _TERMINADO
 from app.mlb.schedule import buscar_partido
 from app.utils.equipos import logo_equipo, nombre_corto, partido_corto
 from app.utils.logger import get_logger
@@ -24,16 +26,6 @@ from app.utils.progress_bar import target_needed
 from app.utils.tiempo import formato_hora_fecha
 
 log = get_logger(__name__)
-
-
-_EN_CURSO = ("In Progress", "Manager challenge", "Warmup", "Delayed")
-
-# Los partidos terminados también necesitan el boxscore: es el que tiene
-# los números DEFINITIVOS. Sin esto el servicio volvía al promedio
-# histórico al terminar el juego y se perdía cómo quedó realmente el
-# ticket, que es justo lo que uno quiere conservar.
-_TERMINADO = ("Final", "Game Over", "Completed Early")
-_CON_DATOS = _EN_CURSO + _TERMINADO
 
 
 def _equipos_de(match: str) -> tuple[str, str]:

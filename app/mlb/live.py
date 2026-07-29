@@ -4,13 +4,12 @@ from __future__ import annotations
 from typing import Any
 
 from app.config import settings
+from app.mlb.estados import CON_DATOS
 from app.mlb.http import MLBClientError, get
 from app.mlb.schedule import get_schedule
 from app.utils.logger import get_logger
 
 log = get_logger(__name__)
-
-_IN_PROGRESS_STATUSES = ("In Progress", "Manager challenge", "Warmup")
 
 
 def get_live_game(game_pk: int) -> dict[str, Any]:
@@ -124,12 +123,17 @@ def _ip_to_outs(ip: str) -> int:
 
 
 def get_live_games_today() -> list[dict[str, Any]]:
-    """Filtra el schedule de hoy y devuelve solo los partidos en curso,
-    con su estado en vivo ya resuelto (inning, outs, score, bases)."""
+    """Filtra el schedule de hoy y devuelve los partidos con datos
+    disponibles -EN CURSO o TERMINADOS-, con su estado ya resuelto.
+
+    Antes solo dejaba pasar los "en curso": un partido Final nunca
+    aparecía acá, así que find_live_game_by_teams jamás encontraba su
+    game_pk y la leg terminaba mostrando el promedio histórico en vez
+    del resultado real."""
     games = get_schedule()
     live_games = []
     for g in games:
-        if g["status"] in _IN_PROGRESS_STATUSES:
+        if g["status"] in CON_DATOS:
             try:
                 live = get_live_game(g["game_pk"])
                 live_games.append({**g, **live})
