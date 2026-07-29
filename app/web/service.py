@@ -105,8 +105,153 @@ def _leg_historica(leg: dict) -> dict[str, Any]:
     }
 
 
+def _datos_del_partido(match_text: str) -> tuple[dict | None, tuple | None]:
+    """Devuelve (entrada del calendario, datos en vivo) para un partido."""
+    partido = None
+    try:
+        a, h = _equipos_de(match_text)
+        partido = buscar_partido(a, h)
+    except Exception:
+        log.exception("Error buscando el partido en el calendario")
+
+    live_data = None
+    if partido and partido.get("status") in _EN_CURSO:
+        try:
+            live_data = get_live_tracking_for_match(match_text)
+        except Exception:
+            log.exception("Error trayendo el estado en vivo")
+    return partido, live_data
+
+
+def _armar_grupo(match_text: str, legs_raw: list[dict]) -> dict[str, Any]:
+    """Un grupo = las legs de UN partido dentro de una apuesta.
+
+    Cada grupo busca su propio partido. Antes se buscaba uno solo por
+    apuesta y se aplicaba a todas las legs: en una combinada de varios
+    juegos, las selecciones de los otros partidos nunca recibían datos en
+    vivo y se quedaban mostrando el promedio histórico.
+    """
+    partido, live_data = _datos_del_partido(match_text)
+
+    legs: list[dict[str, Any]] = []
+    for leg in legs_raw:
+        resultado = None
+        if live_data:
+            boxscore, live_state = live_data
+            resultado = _leg_en_vivo(leg, boxscore, live_state)
+        legs.append(resultado or _leg_historica(leg))
+
+    if partido:
+        away_nombre = partido.get("away_team")
+        home_nombre = partido.get("home_team")
+    else:
+        away_nombre, home_nombre = _equipos_de(match_text)
+
+    grupo: dict[str, Any] = {
+        "match": partido_corto(match_text),
+        "away": nombre_corto(away_nombre),
+        "home": nombre_corto(home_nombre),
+        "away_logo": logo_equipo(away_nombre),
+        "home_logo": logo_equipo(home_nombre),
+        "start": formato_hora_fecha(partido.get("game_time_utc")) if partido else None,
+        "status": partido.get("status") if partido else None,
+        "odds": (legs_raw[0].get("group_odds") if legs_raw else None),
+        "legs": legs,
+        "done": sum(1 for l in legs if l.get("state") == "done"),
+        "total": len(legs),
+        "live": bool(live_data),
+    }
+
+    if live_data:
+        _, live_state = live_data
+        traducido = {
+            "Top": "arriba", "Bottom": "abajo",
+            "Middle": "medio", "End": "fin",
+        }.get(live_state.get("inning_state") or "", "")
+        grupo.update({
+            "inning": live_state.get("inning"),
+            "inning_state": traducido,
+            "away_score": live_state.get("away_score"),
+            "home_score": live_state.get("home_score"),
+        })
+
+    return grupo
+
+
+def _estado_del_partido(match: str) -> tuple[dict | None, tuple | None]:
+    """Devuelve (partido del calendario, datos en vivo) para un match."""
+    partido = None
+    try:
+        a, h = _equipos_de(match)
+        partido = buscar_partido(a, h)
+    except Exception:
+        log.exception("Error buscando el partido en el calendario")
+
+    live_data = None
+    if partido and partido.get("status") in _EN_CURSO:
+        try:
+            live_data = get_live_tracking_for_match(match)
+        except Exception:
+            log.exception("Error trayendo el estado en vivo")
+    return partido, live_data
+
+
+def _armar_grupo(match: str, legs_raw: list[dict]) -> dict[str, Any]:
+    """Un partido dentro de una apuesta, con sus legs y su estado.
+
+    Existe porque una combinada larga de Stake no es una lista plana: es
+    un ticket que agrupa varias "Multi apuesta del mismo partido", cada
+    una con su propio partido y su propia cuota. Aplastar todo en una
+    lista hacía parecer que las 11 selecciones eran del primer juego.
+    """
+    partido, live_data = _estado_del_partido(match)
+
+    legs: list[dict[str, Any]] = []
+    for leg in legs_raw:
+        resultado = None
+        if live_data:
+            boxscore, live_state = live_data
+            resultado = _leg_en_vivo(leg, boxscore, live_state)
+        legs.append(resultado or _leg_historica(leg))
+
+    if partido:
+        away_nombre = partido.get("away_team")
+        home_nombre = partido.get("home_team")
+    else:
+        away_nombre, home_nombre = _equipos_de(match)
+
+    grupo: dict[str, Any] = {
+        "match": partido_corto(match),
+        "away": nombre_corto(away_nombre),
+        "home": nombre_corto(home_nombre),
+        "away_logo": logo_equipo(away_nombre),
+        "home_logo": logo_equipo(home_nombre),
+        "start": formato_hora_fecha(partido.get("game_time_utc")) if partido else None,
+        "odds": legs_raw[0].get("group_odds") if legs_raw else None,
+        "legs": legs,
+        "done": sum(1 for l in legs if l.get("state") == "done"),
+        "total": len(legs),
+        "live": bool(live_data),
+    }
+
+    if live_data:
+        _, live_state = live_data
+        traducido = {"Top": "arriba", "Bottom": "abajo", "Middle": "medio", "End": "fin"}.get(
+            live_state.get("inning_state") or "", ""
+        )
+        grupo.update({
+            "inning": live_state.get("inning"),
+            "inning_state": traducido,
+            "away_score": live_state.get("away_score"),
+            "home_score": live_state.get("home_score"),
+        })
+
+    return grupo
+
+
 def estado_apuestas(chat_id: int) -> dict[str, Any]:
-    """Devuelve todos los tickets guardados con su estado actual."""
+    """Devuelve las apuestas guardadas, cada una dividida en grupos por
+    partido — igual que las muestra la casa de apuestas."""
     guardado = get_active_bet(chat_id)
     tickets = normalize(guardado or {})
 
@@ -117,76 +262,25 @@ def estado_apuestas(chat_id: int) -> dict[str, Any]:
         if not legs_raw:
             continue
 
-        # Buscamos el partido SIEMPRE, no solo si la captura decía "En vivo".
-        # Si solo confiáramos en ese dato, una apuesta cargada antes del
-        # primer lanzamiento se quedaría en modo histórico para siempre y
-        # nunca pasaría sola a seguimiento en vivo.
-        partido = None
-        try:
-            a, h = _equipos_de(ticket.get("match", ""))
-            partido = buscar_partido(a, h)
-        except Exception:
-            log.exception("Error buscando el partido en el calendario")
-
-        live_data = None
-        if partido and partido.get("status") in _EN_CURSO:
-            try:
-                live_data = get_live_tracking_for_match(ticket.get("match", ""))
-            except Exception:
-                log.exception("Error trayendo el estado en vivo")
-
-        legs: list[dict[str, Any]] = []
+        # Agrupamos por partido conservando el orden de aparición
+        por_partido: dict[str, list[dict]] = {}
         for leg in legs_raw:
-            resultado = None
-            if live_data:
-                boxscore, live_state = live_data
-                resultado = _leg_en_vivo(leg, boxscore, live_state)
-            legs.append(resultado or _leg_historica(leg))
+            clave = (leg.get("match") or ticket.get("match") or "").strip()
+            por_partido.setdefault(clave, []).append(leg)
 
-        cumplidas = sum(1 for l in legs if l.get("state") == "done")
+        grupos = [_armar_grupo(m, ls) for m, ls in por_partido.items()]
 
-        # Nombres y logos: preferimos los del calendario oficial, que vienen
-        # completos y bien escritos, antes que los leídos de la captura.
-        if partido:
-            away_nombre = partido.get("away_team")
-            home_nombre = partido.get("home_team")
-        else:
-            away_nombre, home_nombre = _equipos_de(ticket.get("match", ""))
+        cumplidas = sum(g["done"] for g in grupos)
+        total = sum(g["total"] for g in grupos)
 
-        cabecera: dict[str, Any] = {
+        salida.append({
             "label": ticket.get("label"),
-            "match": partido_corto(ticket.get("match")),
-            "away": nombre_corto(away_nombre),
-            "home": nombre_corto(home_nombre),
-            "away_logo": logo_equipo(away_nombre),
-            "home_logo": logo_equipo(home_nombre),
-            "start": formato_hora_fecha(partido.get("game_time_utc")) if partido else None,
-            "status": partido.get("status") if partido else None,
             "odds": ticket.get("total_odds"),
             "declaradas": ticket.get("legs_declaradas"),
-            "legs": legs,
+            "grupos": grupos,
             "done": cumplidas,
-            "total": len(legs),
-            "live": bool(live_data),
-        }
-
-        if live_data:
-            _, live_state = live_data
-            traducido = {
-                "Top": "arriba",
-                "Bottom": "abajo",
-                "Middle": "medio",
-                "End": "fin",
-            }.get(live_state.get("inning_state") or "", "")
-            cabecera.update(
-                {
-                    "inning": live_state.get("inning"),
-                    "inning_state": traducido,
-                    "away_score": live_state.get("away_score"),
-                    "home_score": live_state.get("home_score"),
-                }
-            )
-
-        salida.append(cabecera)
+            "total": total,
+            "live": any(g["live"] for g in grupos),
+        })
 
     return {"tickets": salida, "count": len(salida)}

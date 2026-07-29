@@ -89,36 +89,116 @@ def estado(tmp_path, monkeypatch):
 
 
 class TestEstadoParaLaWeb:
-    def test_devuelve_los_tickets(self, estado):
+    def _t(self, estado):
+        return estado["tickets"][0]
+
+    def _g(self, estado):
+        return self._t(estado)["grupos"][0]
+
+    def test_devuelve_la_apuesta(self, estado):
         assert estado["count"] == 1
-        assert len(estado["tickets"][0]["legs"]) == 2
+        assert self._t(estado)["total"] == 2
+
+    def test_agrupa_las_legs_por_partido(self, estado):
+        grupos = self._t(estado)["grupos"]
+        assert len(grupos) == 1
+        assert len(grupos[0]["legs"]) == 2
 
     def test_usa_nombres_cortos_de_equipo(self, estado):
-        assert estado["tickets"][0]["match"] == "Rangers @ Mariners"
+        assert self._g(estado)["match"] == "Rangers @ Mariners"
 
-    def test_incluye_marcador_y_entrada(self, estado):
-        t = estado["tickets"][0]
-        assert t["away_score"] == 7
-        assert t["inning"] == 7
-        assert t["inning_state"] == "abajo"
+    def test_incluye_marcador_y_entrada_en_el_grupo(self, estado):
+        g = self._g(estado)
+        assert g["away_score"] == 7
+        assert g["inning"] == 7
+        assert g["inning_state"] == "abajo"
 
     def test_cuenta_las_cumplidas(self, estado):
-        assert estado["tickets"][0]["done"] == 1
-        assert estado["tickets"][0]["total"] == 2
+        assert self._t(estado)["done"] == 1
+        assert self._t(estado)["total"] == 2
 
     def test_pitcher_que_salio_queda_en_dead(self, estado):
-        kirby = estado["tickets"][0]["legs"][0]
+        kirby = self._g(estado)["legs"][0]
         assert kirby["state"] == "dead"
         assert kirby["pct"] == 75.0  # 3 de 4
 
     def test_leg_cumplida_llega_al_100(self, estado):
-        duran = estado["tickets"][0]["legs"][1]
+        duran = self._g(estado)["legs"][1]
         assert duran["state"] == "done"
         assert duran["pct"] == 100.0
 
     def test_el_porcentaje_nunca_se_pasa_de_100(self, estado):
-        for leg in estado["tickets"][0]["legs"]:
+        for leg in self._g(estado)["legs"]:
             assert 0 <= leg["pct"] <= 100
+
+
+class TestCombinadaDeVariosPartidos:
+    """El bug: una combinada de 11 tramos repartidos en 5 juegos buscaba
+    UN solo partido y aplicaba ese resultado a todas las legs. Las de los
+    otros 4 juegos nunca recibían datos en vivo."""
+
+    def _guardar(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/m.db")
+        from app.db import database
+
+        monkeypatch.setattr(database, "_db_path", lambda: str(tmp_path / "m.db"))
+        database.init_db()
+        database.save_active_bet(3, {
+            "is_live": True,
+            "bets": [{
+                "label": "1",
+                "match": "Miami Marlins @ Philadelphia Phillies",
+                "total_odds": "23.73",
+                "is_live": True,
+                "legs": [
+                    {"match": "Miami Marlins @ Philadelphia Phillies",
+                     "player": "Kyle Schwarber", "market": "Hits + Runs + RBIs",
+                     "line": "Over 0.5", "group_odds": "1.68"},
+                    {"match": "Pittsburgh Pirates @ Arizona Diamondbacks",
+                     "player": "Gabriel Moreno", "market": "Hits + Runs + RBIs",
+                     "line": "Over 0.5", "group_odds": "1.64"},
+                    {"match": "Pittsburgh Pirates @ Arizona Diamondbacks",
+                     "player": "Bryan Reynolds", "market": "Hits + Runs + RBIs",
+                     "line": "Over 0.5", "group_odds": "1.64"},
+                ],
+            }],
+        })
+
+    def test_separa_un_grupo_por_partido(self, tmp_path, monkeypatch):
+        self._guardar(tmp_path, monkeypatch)
+        from app.web.service import estado_apuestas
+
+        with patch("app.web.service.buscar_partido", return_value=None), \
+             patch("app.web.service.estimate_leg_probability", side_effect=Exception("sin datos")):
+            estado = estado_apuestas(3)
+
+        t = estado["tickets"][0]
+        assert len(t["grupos"]) == 2          # dos partidos
+        assert t["total"] == 3                # tres legs en total
+        assert t["odds"] == "23.73"           # la cuota de TODA la apuesta
+
+    def test_cada_grupo_busca_su_propio_partido(self, tmp_path, monkeypatch):
+        """Lo que estaba roto: solo se consultaba el partido del encabezado."""
+        self._guardar(tmp_path, monkeypatch)
+        from app.web.service import estado_apuestas
+
+        with patch("app.web.service.buscar_partido", return_value=None) as mock, \
+             patch("app.web.service.estimate_leg_probability", side_effect=Exception("x")):
+            estado_apuestas(3)
+
+        consultados = {c.args[0] for c in mock.call_args_list}
+        assert len(consultados) == 2
+
+    def test_muestra_la_cuota_del_sub_grupo(self, tmp_path, monkeypatch):
+        self._guardar(tmp_path, monkeypatch)
+        from app.web.service import estado_apuestas
+
+        with patch("app.web.service.buscar_partido", return_value=None), \
+             patch("app.web.service.estimate_leg_probability", side_effect=Exception("x")):
+            estado = estado_apuestas(3)
+
+        cuotas = {g["odds"] for g in estado["tickets"][0]["grupos"]}
+        assert cuotas == {"1.68", "1.64"}
 
 
 class TestNombreDeMercado:

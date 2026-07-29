@@ -9,6 +9,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from app.analysis.combos import ValueCombo, find_dream_combos
+from app.odds.theodds import OddsClientError
 from app.db.database import guardar_combo_sugerido
 from app.utils.logger import get_logger
 from app.utils.market_labels import nombre_stake
@@ -54,9 +55,14 @@ async def sonadora(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     try:
         combos = find_dream_combos()
+    except OddsClientError as exc:
+        # Mostramos el motivo real (clave, cuota agotada, sin props) en vez
+        # de un "hubo un error" que no le dice nada al usuario.
+        await processing.edit_text(f"⚠️ {escape_md(str(exc)[:300])}", parse_mode="Markdown")
+        return
     except Exception:
         log.exception("Error armando soñadoras")
-        await processing.edit_text("⚠️ Hubo un error consultando las cuotas. Probá de nuevo.")
+        await processing.edit_text("⚠️ Hubo un error inesperado. Probá de nuevo.")
         return
 
     if not combos:

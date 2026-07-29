@@ -35,11 +35,40 @@ def _get(path: str, params: dict[str, Any]) -> Any:
     url = f"{_BASE_URL}{path}"
     try:
         resp = requests.get(url, params=params, timeout=_TIMEOUT)
+
+        # Traducimos los códigos a algo accionable. Antes cualquier fallo
+        # decía "hubo un error consultando las cuotas", que no dice si el
+        # problema es la key, la cuota agotada o que no hay datos.
+        if resp.status_code == 401:
+            raise OddsClientError(
+                "The Odds API rechazó la clave (401). Revisá ODDS_API_KEY."
+            )
+        if resp.status_code == 422:
+            raise OddsClientError(
+                "The Odds API no reconoce ese mercado o ese evento (422). "
+                "Puede que todavía no haya props publicadas."
+            )
+        if resp.status_code == 429:
+            raise OddsClientError(
+                "Te quedaste sin consultas en The Odds API (429). El plan "
+                "gratuito trae 500 por mes y se reinician cada mes."
+            )
         resp.raise_for_status()
+
+        # La cuota restante viaja en las cabeceras: útil para saber si se
+        # está agotando antes de que empiece a fallar.
+        restantes = resp.headers.get("x-requests-remaining")
+        if restantes is not None:
+            try:
+                if int(restantes) < 25:
+                    log.warning("Quedan solo %s consultas en The Odds API", restantes)
+            except ValueError:
+                pass
+
         return resp.json()
     except requests.RequestException as exc:
         log.error("Error llamando a %s: %s", url, exc)
-        raise OddsClientError(f"Fallo al consultar The Odds API: {exc}") from exc
+        raise OddsClientError(f"No pude conectar con The Odds API: {exc}") from exc
 
 
 def get_game_odds(markets: str = "h2h,totals") -> list[dict[str, Any]]:

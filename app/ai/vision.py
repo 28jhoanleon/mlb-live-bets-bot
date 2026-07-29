@@ -40,6 +40,13 @@ Si en la imagen NO se ve ese encabezado con su número, poné total_odds
 en null. Es correcto y esperable: significa que la captura muestra solo
 las selecciones, sin la cabecera.
 
+SUB-GRUPOS DENTRO DE UNA COMBINADA:
+Un "Multi tramo" grande suele estar dividido en bloques por partido, cada
+uno titulado "Multi apuesta del mismo partido (N)" con SU PROPIA cuota
+(ej: 1,68). Eso NO es un ticket aparte: es una parte del mismo.
+En cada leg de ese bloque poné "group_odds" con esa cuota del bloque
+(ej: "1.68"). Es distinta de "total_odds", que es la de toda la apuesta.
+
 UNA COMBINADA PUEDE CRUZAR VARIOS PARTIDOS:
 Un "Multi tramo" de 11 selecciones repartidas en 8 juegos distintos es
 UNA sola apuesta, no ocho. No la separes por partido. Solo son tickets
@@ -98,7 +105,8 @@ Formato:
           "player": "Nombre del jugador o null",
           "market": "Strikeouts",
           "line": "Over 6.5",
-          "odds": "1.90"
+          "odds": "1.90",
+          "group_odds": "1.68"
         }
       ]
     }

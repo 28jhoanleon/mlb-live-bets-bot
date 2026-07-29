@@ -55,6 +55,47 @@ body{
   margin:0 14px 14px;
   overflow:hidden;
 }
+/* Cabecera de la apuesta: identidad y total. Los partidos van adentro,
+   en cada grupo, porque una combinada cruza varios juegos. */
+.ticket__top{
+  display:flex;align-items:center;gap:9px;
+  padding:12px 15px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,var(--surface-2),var(--surface));
+}
+.ticket__title{
+  font-family:'Barlow Condensed',sans-serif;font-weight:600;
+  font-size:19px;letter-spacing:.02em;text-transform:uppercase;
+}
+.ticket__tally{
+  margin-left:auto;font-family:'Barlow Condensed',sans-serif;
+  font-size:16px;font-weight:600;color:var(--muted);
+}
+.ticket__tally b{color:var(--green);font-size:18px}
+.pay{
+  font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:19px;
+  color:var(--amber);font-variant-numeric:tabular-nums;
+}
+.warn{
+  padding:9px 15px;font-size:12.5px;color:var(--amber);
+  background:rgba(242,169,59,.07);border-bottom:1px solid var(--line);
+}
+
+/* Grupo = un partido dentro de la apuesta */
+.group{border-bottom:1px solid var(--line)}
+.group:last-child{border-bottom:0}
+.group__head{
+  padding:10px 15px 9px;
+  background:rgba(255,255,255,.015);
+}
+.group__head .matchup{font-size:17px}
+.group__head .score{font-size:17px}
+.group__head .logo{width:19px;height:19px}
+.subodds{
+  color:var(--amber);font-variant-numeric:tabular-nums;
+  font-family:'Barlow Condensed',sans-serif;font-weight:600;
+}
+.subodds::before{content:"· "}
+
 .ticket__head{
   padding:13px 15px 12px;
   border-bottom:1px solid var(--line);
@@ -72,6 +113,15 @@ body{
   filter:drop-shadow(0 0 1px rgba(232,227,217,.35));
 }
 .team{display:inline-flex;align-items:center;gap:6px}
+.bet__title{font-family:'Barlow Condensed',sans-serif;font-size:20px;
+  font-weight:600;letter-spacing:.02em;text-transform:uppercase}
+.bet__odds{margin-left:auto;font-family:'Barlow Condensed',sans-serif;
+  font-size:20px;font-weight:700;color:var(--amber);
+  font-variant-numeric:tabular-nums}
+.group{border-top:1px solid var(--line)}
+.group:first-child{border-top:0}
+.group__head{padding:11px 15px 10px;background:rgba(255,255,255,.02)}
+.group__odds{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
 .chip{
   background:var(--amber);color:#1B1206;font-weight:700;font-size:12px;
   padding:2px 8px;border-radius:20px;margin-right:8px;flex:none;
@@ -100,7 +150,81 @@ body{
 }
 .tally b{color:var(--green)}
 
+/* ---------- Grupo: un partido dentro de la apuesta ---------- */
+.group{border-top:1px solid var(--line)}
+.group:first-of-type{border-top:0}
+.group__head{
+  padding:10px 15px 9px;
+  background:rgba(255,255,255,.018);
+}
+.group__teams{
+  display:flex;align-items:center;gap:7px;
+  font-family:'Barlow Condensed',sans-serif;
+  font-size:17px;font-weight:600;letter-spacing:.01em;
+}
+.gscore{
+  margin-left:auto;font-variant-numeric:tabular-nums;
+  font-weight:700;font-size:17px;letter-spacing:.03em;
+}
+.group__meta{
+  display:flex;align-items:center;gap:8px;
+  margin-top:3px;color:var(--muted);font-size:11.5px;
+}
+.godds{
+  color:var(--chalk);font-variant-numeric:tabular-nums;
+  background:var(--surface-2);padding:1px 6px;border-radius:4px;
+}
+.gtally{
+  margin-left:auto;font-family:'Barlow Condensed',sans-serif;
+  font-size:13px;font-weight:600;color:var(--muted);
+}
+.tname{
+  font-family:'Barlow Condensed',sans-serif;font-size:19px;
+  font-weight:600;letter-spacing:.02em;text-transform:uppercase;
+}
+
 /* ---------- Cada selección ---------- */
+/* Cabecera de la apuesta: identidad y total. Los partidos van adentro,
+   en cada grupo, porque una combinada cruza varios juegos. */
+.ticket__top{
+  display:flex;align-items:center;gap:9px;
+  padding:12px 15px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,var(--surface-2),var(--surface));
+}
+.ticket__title{
+  font-family:'Barlow Condensed',sans-serif;font-weight:600;
+  font-size:19px;letter-spacing:.02em;text-transform:uppercase;
+}
+.ticket__tally{
+  margin-left:auto;font-family:'Barlow Condensed',sans-serif;
+  font-size:16px;font-weight:600;color:var(--muted);
+}
+.ticket__tally b{color:var(--green);font-size:18px}
+.pay{
+  font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:19px;
+  color:var(--amber);font-variant-numeric:tabular-nums;
+}
+.warn{
+  padding:9px 15px;font-size:12.5px;color:var(--amber);
+  background:rgba(242,169,59,.07);border-bottom:1px solid var(--line);
+}
+
+/* Grupo = un partido dentro de la apuesta */
+.group{border-bottom:1px solid var(--line)}
+.group:last-child{border-bottom:0}
+.group__head{
+  padding:10px 15px 9px;
+  background:rgba(255,255,255,.015);
+}
+.group__head .matchup{font-size:17px}
+.group__head .score{font-size:17px}
+.group__head .logo{width:19px;height:19px}
+.subodds{
+  color:var(--amber);font-variant-numeric:tabular-nums;
+  font-family:'Barlow Condensed',sans-serif;font-weight:600;
+}
+.subodds::before{content:"· "}
+
 .ticket__head{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .ticket__num{
   font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:600;
@@ -118,8 +242,8 @@ body{
   background:rgba(210,84,75,.12);border:1px solid rgba(210,84,75,.3);
   color:var(--clay);font-size:12px;
 }
-.leg{padding:14px 15px 16px;border-bottom:1px solid var(--line)}
-.leg:last-child{border-bottom:0}
+.leg{padding:13px 15px 15px 22px;border-bottom:1px solid var(--line)}
+.group .leg:last-child{border-bottom:0}
 .leg__top{display:flex;align-items:baseline;gap:8px;margin-bottom:2px}
 .player{font-weight:600;font-size:15px;letter-spacing:-.01em}
 .odds{
@@ -233,57 +357,62 @@ function leg(l){
 }
 
 function equipo(nombre, logo){
-  // Si no reconocemos el escudo mostramos solo el nombre, sin hueco raro
   const img = logo ? `<img class="logo" src="${esc(logo)}" alt="" loading="lazy"
                         onerror="this.remove()">` : '';
   return `<span class="team">${img}${esc(nombre)}</span>`;
 }
 
-function ticket(t, i, total){
-  const marcador = (t.away_score ?? null) !== null
-    ? `<span class="score">${esc(t.away_score)} – ${esc(t.home_score)}</span>` : '';
+// Un grupo = las selecciones de UN partido dentro de la apuesta. Es la
+// misma jerarquía que muestra la casa: apuesta -> partidos -> selecciones.
+function grupo(g){
+  const marcador = (g.away_score ?? null) !== null
+    ? `<span class="gscore">${esc(g.away_score)} – ${esc(g.home_score)}</span>` : '';
 
-  // En vivo mandan la entrada y el marcador; si no empezó, el horario.
-  const estado = t.live && t.inning
-    ? `<span class="pulse"></span> ${esc(t.inning)}ª entrada ${esc(t.inning_state || '')}`
-    : (t.start ? `🕐 ${esc(t.start)}` : 'Sin horario');
+  const estado = g.live && g.inning
+    ? `<span class="pulse"></span> ${esc(g.inning)}ª ${esc(g.inning_state || '')}`
+    : (g.start ? `🕐 ${esc(g.start)}` : '');
 
-  const cuota = t.odds ? ` · Paga ${esc(t.odds)}` : '';
-  const etiqueta = t.label ? `<span class="chip">${esc(t.label)}</span>` : '';
-  const [a, b] = String(t.match || '').split(' @ ');
-
-  // Las combinadas largas (11-15 tramos) arrancan plegadas: si no, una
-  // sola apuesta ocupa varias pantallas y no se pueden comparar entre sí.
-  const largo = (t.legs || []).length > 4;
-  const cerrado = largo ? ' cerrado' : '';
-
-  const numeracion = total > 1
-    ? `<span class="ticket__num">Apuesta ${i + 1} de ${total} · ${esc(t.total)} tramos</span>`
-    : (largo ? `<span class="ticket__num">${esc(t.total)} tramos</span>` : '');
-
-  // Si la casa declaraba más selecciones de las que leímos, avisamos:
-  // el conteo estaría incompleto y es mejor decirlo que fingir exactitud.
-  const faltan = t.declaradas && t.declaradas > t.total
-    ? `<div class="aviso">Leí ${esc(t.total)} de ${esc(t.declaradas)} selecciones.
-       Mandá el resto de la captura para completarla.</div>` : '';
+  const cuota = g.odds ? `<span class="godds">${esc(g.odds)}</span>` : '';
 
   return `
-    <section class="ticket${cerrado}">
-      <div class="ticket__head" onclick="this.parentNode.classList.toggle('cerrado')">
-        ${numeracion}
-        <div class="matchup">
-          ${etiqueta}${equipo(t.away || a || t.match, t.away_logo)}
+    <div class="group">
+      <div class="group__head">
+        <div class="group__teams">
+          ${equipo(g.away, g.away_logo)}
           <span class="at">@</span>
-          ${equipo(t.home || b || '', t.home_logo)}
+          ${equipo(g.home, g.home_logo)}
           ${marcador}
         </div>
-        <div class="meta">
-          ${estado}${cuota}
-          <span class="tally"><b>${esc(t.done)}</b> de ${esc(t.total)}<span class="caret">▼</span></span>
+        <div class="group__meta">
+          ${estado}
+          ${cuota}
+          <span class="gtally">${esc(g.done)}/${esc(g.total)}</span>
         </div>
       </div>
-      ${faltan}
-      <div class="legs">${(t.legs || []).map(leg).join('')}</div>
+      ${(g.legs || []).map(leg).join('')}
+    </div>`;
+}
+
+function ticket(t){
+  const grupos = t.grupos || [];
+  const cuota = t.odds ? `Paga <b>${esc(t.odds)}</b>` : 'Sin cuota leída';
+  const etiqueta = t.label ? `<span class="chip">${esc(t.label)}</span>` : '';
+  const tramos = t.declaradas && t.declaradas != t.total
+    ? `${esc(t.total)} de ${esc(t.declaradas)} tramos leídos`
+    : `${esc(t.total)} tramos`;
+
+  return `
+    <section class="ticket">
+      <div class="ticket__head">
+        <div class="matchup">
+          ${etiqueta}<span class="tname">${tramos}</span>
+          <span class="tally"><b>${esc(t.done)}</b> de ${esc(t.total)}</span>
+        </div>
+        <div class="meta">
+          ${cuota} · ${esc(grupos.length)} ${grupos.length === 1 ? 'partido' : 'partidos'}
+        </div>
+      </div>
+      ${grupos.map(grupo).join('')}
     </section>`;
 }
 
