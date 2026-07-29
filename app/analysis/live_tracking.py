@@ -42,6 +42,9 @@ class LiveLegStatus:
     threshold: float
     current_value: float
     already_hit: bool
+    # True solo si el partido terminó y la leg no se cumplió: resultado
+    # definitivo, distinto de "va perdiendo pero todavía puede darse".
+    perdida: bool
     forward_probability_pct: float | None  # None si ya se cumplió o no hay datos
     progress_bar: str
     active_status: str  # texto tipo "🟢 en el partido" / "🔴 salió" / "❓ sin confirmar"
@@ -212,6 +215,12 @@ def track_leg_live(leg: dict, boxscore: dict, live_state: dict) -> LiveLegStatus
     if already_hit:
         status_text = "ASEGURADA — ya no puede revertirse" if side == "Over" else "CUMPLIDA"
         emoji = "✅"
+    elif partido_terminado:
+        # Partido terminado y no se cumplió: la leg está PERDIDA, no
+        # "improbable". Conservamos el resultado final en vez de volver al
+        # promedio histórico, que borraría cómo quedó el ticket.
+        status_text = f"NO SE DIO — quedó en {_fmt_num(current_value)}"
+        emoji = "❌"
     elif is_pitcher and "🔴" in active_status:
         # Si el pitcher ya salió y no cumplió, la leg está prácticamente decidida en contra
         status_text = "ya no sigue en el montículo — improbable que se cumpla"
@@ -232,8 +241,12 @@ def track_leg_live(leg: dict, boxscore: dict, live_state: dict) -> LiveLegStatus
             status_text = f"va {_fmt_num(current_value)}, {forward_pct}% de mantenerse bajo {_fmt_num(threshold)}"
         emoji = "🟡"
 
+    perdida = bool(partido_terminado and not already_hit)
+
     if already_hit:
         bar_state = "done"
+    elif perdida:
+        bar_state = "lost"
     elif is_pitcher and "🔴" in active_status:
         bar_state = "dead"
     else:
@@ -255,6 +268,7 @@ def track_leg_live(leg: dict, boxscore: dict, live_state: dict) -> LiveLegStatus
         threshold=threshold,
         current_value=current_value,
         already_hit=already_hit,
+        perdida=perdida,
         forward_probability_pct=forward_pct,
         progress_bar=progress_bar,
         active_status=active_status,

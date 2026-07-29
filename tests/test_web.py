@@ -348,3 +348,91 @@ class TestCacheDelCalendario:
             schedule.get_schedule_cacheado()
 
         assert mock.call_count == 2
+
+
+class TestPartidosTerminados:
+    """Cuando el partido termina hay que CONGELAR lo que pasó. Antes se
+    dejaba de traer el boxscore y la leg volvía a mostrar el promedio
+    histórico, perdiendo el resultado real."""
+
+    BOX_FINAL = {
+        "George Kirby": {
+            "player_id": 1, "is_team_last_pitcher": True, "is_current_pitcher": False,
+            "batting_order": None, "batting": {},
+            "pitching": {"strikeouts": 3, "outs": 18, "walks": 1, "hits_allowed": 7},
+        },
+        "Ezequiel Duran": {
+            "player_id": 3, "is_team_last_pitcher": False, "batting_order": "400",
+            "is_on_bench": False,
+            "batting": {"hits": 2, "runs": 1, "rbi": 1, "home_runs": 0,
+                        "strikeouts": 1, "walks": 0, "stolen_bases": 0},
+            "pitching": {},
+        },
+    }
+    LIVE_FINAL = {
+        "inning": 9, "inning_state": "End", "status": "Final",
+        "away_team": "Texas Rangers", "home_team": "Seattle Mariners",
+        "away_score": 7, "home_score": 2, "current_pitcher": None,
+    }
+    CAL_FINAL = {
+        "game_pk": 1, "status": "Final",
+        "away_team": "Texas Rangers", "home_team": "Seattle Mariners",
+        "game_time_utc": "2026-07-29T18:10:00Z",
+    }
+
+    @pytest.fixture
+    def grupo(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/f.db")
+        from app.db import database
+
+        monkeypatch.setattr(database, "_db_path", lambda: str(tmp_path / "f.db"))
+        database.init_db()
+        database.save_active_bet(3, APUESTA)
+
+        from app.web.service import estado_apuestas
+
+        with patch("app.web.service.buscar_partido", return_value=self.CAL_FINAL), \
+             patch("app.web.service.get_live_tracking_for_match",
+                   return_value=(self.BOX_FINAL, self.LIVE_FINAL)), \
+             patch("app.analysis.live_tracking.search_player", side_effect=_buscar_jugador), \
+             patch("app.analysis.live_tracking._recent_avg_rate", return_value=1.0):
+            return estado_apuestas(3)["tickets"][0]["grupos"][0]
+
+    def test_marca_el_partido_como_terminado(self, grupo):
+        assert grupo["terminado"] is True
+
+    def test_conserva_el_marcador_final(self, grupo):
+        assert grupo["away_score"] == 7
+        assert grupo["home_score"] == 2
+
+    def test_la_leg_que_no_llego_queda_perdida(self, grupo):
+        kirby = next(l for l in grupo["legs"] if "Kirby" in l["player"])
+        assert kirby["state"] == "lost"
+        assert kirby["current"] == 3  # el valor real con el que terminó
+
+    def test_la_leg_cumplida_queda_marcada(self, grupo):
+        duran = next(l for l in grupo["legs"] if "Duran" in l["player"])
+        assert duran["state"] == "done"
+
+    def test_no_vuelve_al_promedio_historico(self, grupo):
+        """El bug: al terminar mostraba '70% en sus últimos 10' en vez del
+        resultado real de ese partido."""
+        for leg in grupo["legs"]:
+            assert "últimos" not in (leg.get("note") or "")
+
+
+class TestSinFuncionesDuplicadas:
+    """Bug real: quedaron dos `_armar_grupo` en el archivo y la segunda
+    (vieja, sin el campo `terminado`) pisaba a la buena. Los partidos
+    terminados nunca se marcaban como tales."""
+
+    def test_una_sola_definicion_de_cada_funcion(self):
+        import re
+        from pathlib import Path
+
+        import app.web.service as servicio
+
+        fuente = Path(servicio.__file__).read_text(encoding="utf-8")
+        nombres = re.findall(r"^def (\w+)", fuente, re.M)
+        duplicados = {n for n in nombres if nombres.count(n) > 1}
+        assert not duplicados, f"funciones duplicadas: {duplicados}"

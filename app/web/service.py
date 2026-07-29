@@ -28,6 +28,13 @@ log = get_logger(__name__)
 
 _EN_CURSO = ("In Progress", "Manager challenge", "Warmup", "Delayed")
 
+# Los partidos terminados también necesitan el boxscore: es el que tiene
+# los números DEFINITIVOS. Sin esto el servicio volvía al promedio
+# histórico al terminar el juego y se perdía cómo quedó realmente el
+# ticket, que es justo lo que uno quiere conservar.
+_TERMINADO = ("Final", "Game Over", "Completed Early")
+_CON_DATOS = _EN_CURSO + _TERMINADO
+
 
 def _equipos_de(match: str) -> tuple[str, str]:
     for sep in (" @ ", " vs ", " - "):
@@ -39,6 +46,10 @@ def _equipos_de(match: str) -> tuple[str, str]:
 
 def _estado_leg(status) -> str:
     """Traduce el estado interno a una clase que la web entiende."""
+    # El orden importa: una leg de un partido TERMINADO que no se cumplió
+    # está perdida, no "en curso".
+    if getattr(status, "perdida", False):
+        return "lost"
     if status.already_hit:
         return "done"
     if "🔴" in status.active_status:
@@ -115,7 +126,7 @@ def _datos_del_partido(match_text: str) -> tuple[dict | None, tuple | None]:
         log.exception("Error buscando el partido en el calendario")
 
     live_data = None
-    if partido and partido.get("status") in _EN_CURSO:
+    if partido and partido.get("status") in _CON_DATOS:
         try:
             live_data = get_live_tracking_for_match(match_text)
         except Exception:
@@ -155,6 +166,7 @@ def _armar_grupo(match_text: str, legs_raw: list[dict]) -> dict[str, Any]:
         "home_logo": logo_equipo(home_nombre),
         "start": formato_hora_fecha(partido.get("game_time_utc")) if partido else None,
         "status": partido.get("status") if partido else None,
+        "terminado": bool(partido and partido.get("status") in _TERMINADO),
         "odds": (legs_raw[0].get("group_odds") if legs_raw else None),
         "legs": legs,
         "done": sum(1 for l in legs if l.get("state") == "done"),
@@ -168,77 +180,6 @@ def _armar_grupo(match_text: str, legs_raw: list[dict]) -> dict[str, Any]:
             "Top": "arriba", "Bottom": "abajo",
             "Middle": "medio", "End": "fin",
         }.get(live_state.get("inning_state") or "", "")
-        grupo.update({
-            "inning": live_state.get("inning"),
-            "inning_state": traducido,
-            "away_score": live_state.get("away_score"),
-            "home_score": live_state.get("home_score"),
-        })
-
-    return grupo
-
-
-def _estado_del_partido(match: str) -> tuple[dict | None, tuple | None]:
-    """Devuelve (partido del calendario, datos en vivo) para un match."""
-    partido = None
-    try:
-        a, h = _equipos_de(match)
-        partido = buscar_partido(a, h)
-    except Exception:
-        log.exception("Error buscando el partido en el calendario")
-
-    live_data = None
-    if partido and partido.get("status") in _EN_CURSO:
-        try:
-            live_data = get_live_tracking_for_match(match)
-        except Exception:
-            log.exception("Error trayendo el estado en vivo")
-    return partido, live_data
-
-
-def _armar_grupo(match: str, legs_raw: list[dict]) -> dict[str, Any]:
-    """Un partido dentro de una apuesta, con sus legs y su estado.
-
-    Existe porque una combinada larga de Stake no es una lista plana: es
-    un ticket que agrupa varias "Multi apuesta del mismo partido", cada
-    una con su propio partido y su propia cuota. Aplastar todo en una
-    lista hacía parecer que las 11 selecciones eran del primer juego.
-    """
-    partido, live_data = _estado_del_partido(match)
-
-    legs: list[dict[str, Any]] = []
-    for leg in legs_raw:
-        resultado = None
-        if live_data:
-            boxscore, live_state = live_data
-            resultado = _leg_en_vivo(leg, boxscore, live_state)
-        legs.append(resultado or _leg_historica(leg))
-
-    if partido:
-        away_nombre = partido.get("away_team")
-        home_nombre = partido.get("home_team")
-    else:
-        away_nombre, home_nombre = _equipos_de(match)
-
-    grupo: dict[str, Any] = {
-        "match": partido_corto(match),
-        "away": nombre_corto(away_nombre),
-        "home": nombre_corto(home_nombre),
-        "away_logo": logo_equipo(away_nombre),
-        "home_logo": logo_equipo(home_nombre),
-        "start": formato_hora_fecha(partido.get("game_time_utc")) if partido else None,
-        "odds": legs_raw[0].get("group_odds") if legs_raw else None,
-        "legs": legs,
-        "done": sum(1 for l in legs if l.get("state") == "done"),
-        "total": len(legs),
-        "live": bool(live_data),
-    }
-
-    if live_data:
-        _, live_state = live_data
-        traducido = {"Top": "arriba", "Bottom": "abajo", "Middle": "medio", "End": "fin"}.get(
-            live_state.get("inning_state") or "", ""
-        )
         grupo.update({
             "inning": live_state.get("inning"),
             "inning_state": traducido,

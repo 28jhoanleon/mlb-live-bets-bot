@@ -288,6 +288,16 @@ body{
 .leg.is-mid .fill{background:var(--amber)}
 .leg.is-bad .fill{background:var(--clay)}
 .leg.is-bad .bubble{background:var(--clay);color:#1B0705}
+.leg.is-lost .fill{background:var(--clay)}
+.leg.is-lost .bubble{background:var(--clay);color:#1B0705}
+.leg.is-lost .goal{color:var(--clay);font-size:16px}
+.leg.is-lost .player{text-decoration:line-through;text-decoration-color:var(--clay);opacity:.75}
+.leg.is-done .goal{font-size:16px}
+.final{
+  color:var(--muted);text-transform:uppercase;letter-spacing:.08em;
+  font-size:10.5px;border:1px solid var(--line);
+  padding:1px 6px;border-radius:4px;
+}
 .leg.is-unknown .fill{background:var(--line)}
 .leg.is-unknown .bubble{background:var(--line);color:var(--muted)}
 .empty{
@@ -337,7 +347,8 @@ function leg(l){
   const pct  = Math.max(0, Math.min(100, Number(l.pct) || 0));
   const meta = [l.market, l.line].filter(Boolean).join(' · ');
   // En vivo el objetivo es un número; ya cumplida, un tilde.
-  const goal = l.state === 'done' ? '✓' : esc(l.goal ?? '');
+  const goal = l.state === 'done' ? '✓'
+             : (l.state === 'lost' ? '✗' : esc(l.goal ?? ''));
   const notaClase = l.state === 'done' || l.state === 'good' ? 'good'
                   : (l.state === 'dead' || l.state === 'bad' ? 'warn' : '');
   return `
@@ -368,9 +379,11 @@ function grupo(g){
   const marcador = (g.away_score ?? null) !== null
     ? `<span class="gscore">${esc(g.away_score)} – ${esc(g.home_score)}</span>` : '';
 
-  const estado = g.live && g.inning
-    ? `<span class="pulse"></span> ${esc(g.inning)}ª ${esc(g.inning_state || '')}`
-    : (g.start ? `🕐 ${esc(g.start)}` : '');
+  const estado = g.terminado
+    ? `<span class="final">Final</span>`
+    : (g.live && g.inning
+        ? `<span class="pulse"></span> ${esc(g.inning)}ª ${esc(g.inning_state || '')}`
+        : (g.start ? `🕐 ${esc(g.start)}` : ''));
 
   const cuota = g.odds ? `<span class="godds">${esc(g.odds)}</span>` : '';
 

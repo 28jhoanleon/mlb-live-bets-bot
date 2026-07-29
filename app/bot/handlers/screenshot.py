@@ -77,7 +77,14 @@ def _leg_market_line(leg: dict) -> str:
 
 def _format_live_leg(index: int, leg: dict, status: LiveLegStatus, is_parlay: bool) -> str:
     jugador_afuera = "🔴" in status.active_status
-    emoji = "✅" if status.already_hit else ("🔴" if jugador_afuera else "⏳")
+    if status.already_hit:
+        emoji = "✅"
+    elif getattr(status, "perdida", False):
+        emoji = "❌"
+    elif jugador_afuera:
+        emoji = "🔴"
+    else:
+        emoji = "⏳"
 
     partes = [
         _leg_title(index, leg, emoji, is_parlay),
@@ -92,6 +99,12 @@ def _format_live_leg(index: int, leg: dict, status: LiveLegStatus, is_parlay: bo
     # dejado de analizar.
     if status.already_hit:
         partes.append(f"   ✅ {escape_md(status.status_text)}")
+        return "\n".join(partes)
+
+    # Partido terminado sin cumplirse: resultado final, no hace falta
+    # explicar probabilidades de algo que ya no puede cambiar.
+    if getattr(status, "perdida", False):
+        partes.append(f"   ❌ {escape_md(status.status_text)}")
         return "\n".join(partes)
 
     if jugador_afuera:

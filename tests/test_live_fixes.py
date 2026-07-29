@@ -426,3 +426,56 @@ class TestNombresDeMercadoStake:
         from app.utils.market_labels import nombre_stake
 
         assert nombre_stake("algo_raro") == "Algo Raro"
+
+
+class TestPartidoTerminado:
+    """Al terminar el partido hay que CONSERVAR cómo quedó el ticket.
+    Antes se volvía al promedio histórico y se perdía el resultado."""
+
+    def _box(self, hits):
+        return {"B": {
+            "player_id": 1, "is_team_last_pitcher": True, "batting_order": "100",
+            "batting": {"hits": hits, "runs": 0, "rbi": 0, "home_runs": 0,
+                        "strikeouts": 0, "walks": 0, "stolen_bases": 0},
+            "pitching": {},
+        }}
+
+    def _track(self, hits, line, status):
+        from unittest.mock import patch
+
+        from app.analysis.live_tracking import track_leg_live
+
+        with patch("app.analysis.live_tracking.search_player",
+                   return_value={"id": 1, "full_name": "B", "position": "Infielder"}), \
+             patch("app.analysis.live_tracking._recent_avg_rate", return_value=1.0):
+            return track_leg_live(
+                {"player": "B", "market": "Hits", "line": line},
+                self._box(hits),
+                {"inning": 9, "inning_state": "End", "status": status},
+            )
+
+    def test_no_cumplida_con_partido_final_queda_perdida(self):
+        s = self._track(0, "Over 0.5", "Final")
+        assert s.perdida is True
+        assert s.already_hit is False
+        assert "NO SE DIO" in s.status_text
+
+    def test_en_curso_no_se_da_por_perdida(self):
+        """Con el partido abierto todavía puede darse: no es un resultado."""
+        s = self._track(0, "Over 0.5", "In Progress")
+        assert s.perdida is False
+        assert "%" in s.status_text
+
+    def test_cumplida_con_partido_final(self):
+        s = self._track(2, "Over 0.5", "Final")
+        assert s.already_hit is True
+        assert s.perdida is False
+
+    def test_game_over_tambien_cuenta_como_terminado(self):
+        assert self._track(0, "Over 0.5", "Game Over").perdida is True
+
+    def test_la_web_traduce_perdida_a_lost(self):
+        from app.web.service import _estado_leg
+
+        assert _estado_leg(self._track(0, "Over 0.5", "Final")) == "lost"
+        assert _estado_leg(self._track(2, "Over 0.5", "Final")) == "done"
