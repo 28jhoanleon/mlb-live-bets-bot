@@ -16,12 +16,25 @@ from app.analysis.live_tracking import get_live_tracking_for_match, track_leg_li
 from app.analysis.probability import ProbabilityError, estimate_leg_probability
 from app.analysis.tickets import normalize
 from app.db.database import get_active_bet
-from app.utils.equipos import partido_corto
+from app.mlb.schedule import buscar_partido
+from app.utils.equipos import logo_equipo, nombre_corto, partido_corto
 from app.utils.logger import get_logger
 from app.utils.market_labels import nombre_stake
 from app.utils.progress_bar import target_needed
+from app.utils.tiempo import formato_hora_fecha
 
 log = get_logger(__name__)
+
+
+_EN_CURSO = ("In Progress", "Manager challenge", "Warmup", "Delayed")
+
+
+def _equipos_de(match: str) -> tuple[str, str]:
+    for sep in (" @ ", " vs ", " - "):
+        if sep in match:
+            a, b = match.split(sep, 1)
+            return a.strip(), b.strip()
+    return match.strip(), ""
 
 
 def _estado_leg(status) -> str:
@@ -104,12 +117,23 @@ def estado_apuestas(chat_id: int) -> dict[str, Any]:
         if not legs_raw:
             continue
 
+        # Buscamos el partido SIEMPRE, no solo si la captura decía "En vivo".
+        # Si solo confiáramos en ese dato, una apuesta cargada antes del
+        # primer lanzamiento se quedaría en modo histórico para siempre y
+        # nunca pasaría sola a seguimiento en vivo.
+        partido = None
+        try:
+            a, h = _equipos_de(ticket.get("match", ""))
+            partido = buscar_partido(a, h)
+        except Exception:
+            log.exception("Error buscando el partido en el calendario")
+
         live_data = None
-        if ticket.get("is_live"):
+        if partido and partido.get("status") in _EN_CURSO:
             try:
                 live_data = get_live_tracking_for_match(ticket.get("match", ""))
             except Exception:
-                log.exception("Error buscando partido en vivo para la web")
+                log.exception("Error trayendo el estado en vivo")
 
         legs: list[dict[str, Any]] = []
         for leg in legs_raw:
@@ -120,8 +144,23 @@ def estado_apuestas(chat_id: int) -> dict[str, Any]:
             legs.append(resultado or _leg_historica(leg))
 
         cumplidas = sum(1 for l in legs if l.get("state") == "done")
+
+        # Nombres y logos: preferimos los del calendario oficial, que vienen
+        # completos y bien escritos, antes que los leídos de la captura.
+        if partido:
+            away_nombre = partido.get("away_team")
+            home_nombre = partido.get("home_team")
+        else:
+            away_nombre, home_nombre = _equipos_de(ticket.get("match", ""))
+
         cabecera: dict[str, Any] = {
             "match": partido_corto(ticket.get("match")),
+            "away": nombre_corto(away_nombre),
+            "home": nombre_corto(home_nombre),
+            "away_logo": logo_equipo(away_nombre),
+            "home_logo": logo_equipo(home_nombre),
+            "start": formato_hora_fecha(partido.get("game_time_utc")) if partido else None,
+            "status": partido.get("status") if partido else None,
             "odds": ticket.get("total_odds"),
             "legs": legs,
             "done": cumplidas,

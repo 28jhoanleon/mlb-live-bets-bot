@@ -73,7 +73,16 @@ def estado(tmp_path, monkeypatch):
 
     from app.web.service import estado_apuestas
 
-    with patch("app.web.service.get_live_tracking_for_match", return_value=(BOXSCORE, LIVE_STATE)), \
+    partido = {
+        "game_pk": 1,
+        "status": "In Progress",
+        "away_team": "Texas Rangers",
+        "home_team": "Seattle Mariners",
+        "game_time_utc": "2026-07-29T18:10:00Z",
+    }
+
+    with patch("app.web.service.buscar_partido", return_value=partido), \
+         patch("app.web.service.get_live_tracking_for_match", return_value=(BOXSCORE, LIVE_STATE)), \
          patch("app.analysis.live_tracking.search_player", side_effect=_buscar_jugador), \
          patch("app.analysis.live_tracking._recent_avg_rate", return_value=1.2):
         return estado_apuestas(999)
@@ -153,3 +162,109 @@ class TestApi:
         r = TestClient(app).get("/api/bets")
         assert r.status_code == 500
         assert "OWNER_CHAT_ID" in r.json()["detail"]
+
+
+class TestDeteccionAutomaticaDeEnVivo:
+    """Bug: el servicio solo buscaba datos en vivo si la captura YA decía
+    'En vivo'. Una apuesta cargada antes del primer lanzamiento quedaba
+    marcada como no-live para siempre y nunca cambiaba sola."""
+
+    def _guardar(self, tmp_path, monkeypatch, is_live: bool):
+        monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/w.db")
+        from app.db import database
+
+        monkeypatch.setattr(database, "_db_path", lambda: str(tmp_path / "w.db"))
+        database.init_db()
+        database.save_active_bet(
+            5,
+            {
+                "is_live": is_live,
+                "bets": [{
+                    "match": "Detroit Tigers @ Baltimore Orioles",
+                    "total_odds": "1.86",
+                    "is_live": is_live,
+                    "legs": [{
+                        "match": "Detroit Tigers @ Baltimore Orioles",
+                        "player": "Kevin McGonigle",
+                        "market": "Hits + Runs + RBIs",
+                        "line": "Over 0.5",
+                    }],
+                }],
+            },
+        )
+
+    def _partido(self, status):
+        return {
+            "game_pk": 1, "status": status,
+            "away_team": "Detroit Tigers", "home_team": "Baltimore Orioles",
+            "game_time_utc": "2026-07-29T18:10:00Z",
+        }
+
+    def test_pasa_a_en_vivo_aunque_la_captura_dijera_que_no(self, tmp_path, monkeypatch):
+        self._guardar(tmp_path, monkeypatch, is_live=False)
+        from app.web.service import estado_apuestas
+
+        with patch("app.web.service.buscar_partido", return_value=self._partido("In Progress")), \
+             patch("app.web.service.get_live_tracking_for_match", return_value=(BOXSCORE, LIVE_STATE)):
+            estado = estado_apuestas(5)
+
+        assert estado["tickets"][0]["live"] is True
+
+    def test_no_pide_datos_en_vivo_si_no_empezo(self, tmp_path, monkeypatch):
+        """No malgastamos llamadas a la API con partidos que no arrancaron."""
+        self._guardar(tmp_path, monkeypatch, is_live=True)
+        from app.web.service import estado_apuestas
+
+        with patch("app.web.service.buscar_partido", return_value=self._partido("Scheduled")), \
+             patch("app.web.service.get_live_tracking_for_match") as mock_live, \
+             patch("app.web.service.estimate_leg_probability", side_effect=Exception("sin datos")):
+            estado_apuestas(5)
+
+        mock_live.assert_not_called()
+
+
+class TestLogosYHorario:
+    def test_devuelve_los_logos_de_ambos_equipos(self):
+        from app.utils.equipos import logo_equipo
+
+        assert logo_equipo("Detroit Tigers").endswith("/116.svg")
+        assert logo_equipo("Baltimore Orioles").endswith("/110.svg")
+
+    def test_reconoce_el_apodo(self):
+        from app.utils.equipos import logo_equipo
+
+        assert logo_equipo("Tigers") == logo_equipo("Detroit Tigers")
+
+    def test_equipo_desconocido_no_rompe(self):
+        """Preferimos no mostrar escudo antes que romper la página."""
+        from app.utils.equipos import logo_equipo
+
+        assert logo_equipo("Equipo Inventado FC") is None
+        assert logo_equipo(None) is None
+
+
+class TestCacheDelCalendario:
+    """La web consulta cada 30s: sin caché serían llamadas idénticas
+    repetidas a la MLB Stats API por cada ticket."""
+
+    def test_reutiliza_el_resultado(self):
+        from app.mlb import schedule
+
+        schedule.limpiar_cache()
+        with patch("app.mlb.schedule.get_schedule", return_value=[{"game_pk": 1}]) as mock:
+            schedule.get_schedule_cacheado()
+            schedule.get_schedule_cacheado()
+            schedule.get_schedule_cacheado()
+
+        assert mock.call_count == 1
+
+    def test_limpiar_cache_fuerza_recarga(self):
+        from app.mlb import schedule
+
+        schedule.limpiar_cache()
+        with patch("app.mlb.schedule.get_schedule", return_value=[{"game_pk": 1}]) as mock:
+            schedule.get_schedule_cacheado()
+            schedule.limpiar_cache()
+            schedule.get_schedule_cacheado()
+
+        assert mock.call_count == 2

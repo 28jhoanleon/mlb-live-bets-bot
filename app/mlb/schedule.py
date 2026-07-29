@@ -48,3 +48,56 @@ def get_schedule(target_date: date | None = None) -> list[dict[str, Any]]:
 def _pitcher_name(side: dict[str, Any]) -> str | None:
     pitcher = side.get("probablePitcher")
     return pitcher.get("fullName") if pitcher else None
+
+
+# --- Caché del calendario -------------------------------------------------
+#
+# La web consulta cada 30 segundos y cada ticket necesita saber si su
+# partido arrancó. Sin caché serían varias llamadas idénticas por minuto
+# a la MLB Stats API. El calendario del día cambia poco, así que lo
+# guardamos un ratito.
+
+_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+_TTL_SEGUNDOS = 45
+
+
+def get_schedule_cacheado(target_date: date | None = None) -> list[dict[str, Any]]:
+    """Igual que get_schedule pero reutiliza el resultado por unos segundos."""
+    import time
+
+    clave = (target_date or date.today()).isoformat()
+    ahora = time.time()
+
+    guardado = _CACHE.get(clave)
+    if guardado and (ahora - guardado[0]) < _TTL_SEGUNDOS:
+        return guardado[1]
+
+    datos = get_schedule(target_date)
+    _CACHE[clave] = (ahora, datos)
+    return datos
+
+
+def limpiar_cache() -> None:
+    """Para los tests, y por si hace falta forzar una recarga."""
+    _CACHE.clear()
+
+
+def buscar_partido(away_hint: str, home_hint: str) -> dict[str, Any] | None:
+    """Encuentra el partido de hoy que coincide con esos equipos.
+
+    A diferencia de find_live_game_by_teams, devuelve el partido ESTÉ O NO
+    en vivo. Hace falta para saber el horario y para detectar el momento en
+    que arranca: si solo miráramos los que ya están en curso, una apuesta
+    cargada antes del primer lanzamiento nunca pasaría a modo en vivo.
+    """
+    if not away_hint:
+        return None
+    a = away_hint.lower()
+    h = (home_hint or "").lower()
+
+    for g in get_schedule_cacheado():
+        away = (g.get("away_team") or "").lower()
+        home = (g.get("home_team") or "").lower()
+        if a in away or (h and h in home) or (h and h in away) or a in home:
+            return g
+    return None

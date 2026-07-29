@@ -66,6 +66,12 @@ body{
   font-size:20px;font-weight:600;letter-spacing:.01em;
 }
 .matchup .at{color:var(--muted);font-size:14px}
+.logo{
+  width:22px;height:22px;object-fit:contain;flex:none;
+  /* Los escudos oscuros se pierden sobre el fondo: un halo tenue los separa */
+  filter:drop-shadow(0 0 1px rgba(232,227,217,.35));
+}
+.team{display:inline-flex;align-items:center;gap:6px}
 .score{
   font-variant-numeric:tabular-nums;font-weight:700;
   font-size:20px;margin-left:auto;letter-spacing:.04em;
@@ -204,22 +210,36 @@ function leg(l){
     </div>`;
 }
 
+function equipo(nombre, logo){
+  // Si no reconocemos el escudo mostramos solo el nombre, sin hueco raro
+  const img = logo ? `<img class="logo" src="${esc(logo)}" alt="" loading="lazy"
+                        onerror="this.remove()">` : '';
+  return `<span class="team">${img}${esc(nombre)}</span>`;
+}
+
 function ticket(t){
   const marcador = (t.away_score ?? null) !== null
     ? `<span class="score">${esc(t.away_score)} – ${esc(t.home_score)}</span>` : '';
-  const entrada = t.live && t.inning
+
+  // En vivo mandan la entrada y el marcador; si no empezó, el horario.
+  const estado = t.live && t.inning
     ? `<span class="pulse"></span> ${esc(t.inning)}ª entrada ${esc(t.inning_state || '')}`
-    : (t.odds ? `Paga ${esc(t.odds)}` : 'Sin comenzar');
+    : (t.start ? `🕐 ${esc(t.start)}` : 'Sin horario');
+
+  const cuota = t.odds ? ` · Paga ${esc(t.odds)}` : '';
   const [a, b] = String(t.match || '').split(' @ ');
+
   return `
     <section class="ticket">
       <div class="ticket__head">
         <div class="matchup">
-          ${esc(a || t.match)} ${b ? '<span class="at">@</span> ' + esc(b) : ''}
+          ${equipo(t.away || a || t.match, t.away_logo)}
+          <span class="at">@</span>
+          ${equipo(t.home || b || '', t.home_logo)}
           ${marcador}
         </div>
         <div class="meta">
-          ${entrada}
+          ${estado}${cuota}
           <span class="tally"><b>${esc(t.done)}</b> de ${esc(t.total)}</span>
         </div>
       </div>

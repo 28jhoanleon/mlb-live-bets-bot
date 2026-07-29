@@ -15,6 +15,7 @@ no quede abierta a cualquiera que la adivine.
 """
 from __future__ import annotations
 
+import contextlib
 import os
 from pathlib import Path
 
@@ -76,14 +77,16 @@ async def index(request: Request) -> FileResponse:
     return FileResponse(ESTATICOS / "index.html")
 
 
-async def _al_arrancar() -> None:
-    # Idempotente (CREATE TABLE IF NOT EXISTS). Lo llamamos también acá
-    # para que la web funcione aunque se levante sola, sin el bot.
+@contextlib.asynccontextmanager
+async def _ciclo_de_vida(app: Starlette):
+    # init_db es idempotente (CREATE TABLE IF NOT EXISTS). Lo llamamos
+    # también acá para que la web funcione aunque se levante sola.
     init_db()
+    yield
 
 
 app = Starlette(
-    on_startup=[_al_arrancar],
+    lifespan=_ciclo_de_vida,
     routes=[
         Route("/", index),
         Route("/health", health),

@@ -148,3 +148,71 @@ def partido_corto(match: str | None) -> str:
             a, b = match.split(sep, 1)
             return f"{nombre_corto(a)} @ {nombre_corto(b)}"
     return nombre_corto(match)
+
+
+# IDs de la MLB Stats API. Son estables desde hace décadas y permiten
+# armar la URL del logo oficial sin pedirle nada extra a la API.
+_IDS_MLB = {
+    "Los Angeles Angels": 108,
+    "Arizona Diamondbacks": 109,
+    "Baltimore Orioles": 110,
+    "Boston Red Sox": 111,
+    "Chicago Cubs": 112,
+    "Cincinnati Reds": 113,
+    "Cleveland Guardians": 114,
+    "Colorado Rockies": 115,
+    "Detroit Tigers": 116,
+    "Houston Astros": 117,
+    "Kansas City Royals": 118,
+    "Los Angeles Dodgers": 119,
+    "Washington Nationals": 120,
+    "New York Mets": 121,
+    "Oakland Athletics": 133,
+    "Athletics": 133,
+    "Pittsburgh Pirates": 134,
+    "San Diego Padres": 135,
+    "Seattle Mariners": 136,
+    "San Francisco Giants": 137,
+    "St. Louis Cardinals": 138,
+    "Tampa Bay Rays": 139,
+    "Texas Rangers": 140,
+    "Toronto Blue Jays": 141,
+    "Minnesota Twins": 142,
+    "Philadelphia Phillies": 143,
+    "Atlanta Braves": 144,
+    "Chicago White Sox": 145,
+    "Miami Marlins": 146,
+    "New York Yankees": 147,
+    "Milwaukee Brewers": 158,
+}
+
+
+def id_equipo(nombre: str | None) -> int | None:
+    """ID del equipo en la MLB Stats API, buscando de forma tolerante
+    porque los nombres pueden venir recortados de una captura."""
+    if not nombre:
+        return None
+    limpio = nombre.strip()
+
+    if limpio in _IDS_MLB:
+        return _IDS_MLB[limpio]
+
+    bajo = limpio.lower()
+    for completo, tid in _IDS_MLB.items():
+        if completo.lower() == bajo:
+            return tid
+    # Por apodo: "Yankees" -> New York Yankees
+    for completo, tid in _IDS_MLB.items():
+        if nombre_corto(completo).lower() == bajo:
+            return tid
+    for completo, tid in _IDS_MLB.items():
+        if bajo in completo.lower() or completo.lower() in bajo:
+            return tid
+    return None
+
+
+def logo_equipo(nombre: str | None) -> str | None:
+    """URL del logo oficial. Devuelve None si no reconocemos al equipo,
+    para que la interfaz simplemente no muestre imagen en vez de romperse."""
+    tid = id_equipo(nombre)
+    return f"https://www.mlbstatic.com/team-logos/{tid}.svg" if tid else None
