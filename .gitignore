@@ -1,0 +1,9 @@
+.env
+*.pyc
+__pycache__/
+*.db
+mlb_bets.db
+.venv/
+venv/
+*.log
+.DS_Store

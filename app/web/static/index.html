@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0B1116">
+<title>MLB Live Bets</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0B1116;
+  --surface:#131C24;
+  --surface-2:#1A252F;
+  --chalk:#E8E3D9;
+  --muted:#7C8A97;
+  --line:#22303B;
+  --amber:#F2A93B;
+  --green:#3FCF8E;
+  --clay:#D2544B;
+  --r:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--ink);
+  color:var(--chalk);
+  font-family:Inter,system-ui,sans-serif;
+  font-size:15px;
+  line-height:1.45;
+  padding:0 0 40px;
+  /* Tiza sobre tierra: un halo tenue de reflector arriba */
+  background-image:radial-gradient(120% 60% at 50% -10%, #16232D 0%, var(--ink) 60%);
+  background-attachment:fixed;
+}
+
+/* ---------- Encabezado ---------- */
+.top{
+  display:flex;align-items:baseline;justify-content:space-between;
+  padding:22px 18px 14px;
+}
+.top h1{
+  font-family:'Barlow Condensed',sans-serif;
+  font-weight:700;font-size:30px;letter-spacing:.02em;
+  text-transform:uppercase;
+}
+.top .sub{color:var(--muted);font-size:12px;letter-spacing:.08em;text-transform:uppercase}
+
+/* ---------- Tarjeta de apuesta ---------- */
+.ticket{
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:var(--r);
+  margin:0 14px 14px;
+  overflow:hidden;
+}
+.ticket__head{
+  padding:13px 15px 12px;
+  border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,var(--surface-2),var(--surface));
+}
+.matchup{
+  display:flex;align-items:center;gap:8px;
+  font-family:'Barlow Condensed',sans-serif;
+  font-size:20px;font-weight:600;letter-spacing:.01em;
+}
+.matchup .at{color:var(--muted);font-size:14px}
+.score{
+  font-variant-numeric:tabular-nums;font-weight:700;
+  font-size:20px;margin-left:auto;letter-spacing:.04em;
+}
+.meta{
+  display:flex;align-items:center;gap:9px;
+  margin-top:5px;color:var(--muted);font-size:12px;
+}
+.pulse{
+  width:6px;height:6px;border-radius:50%;background:var(--clay);
+  box-shadow:0 0 0 0 rgba(210,84,75,.7);
+  animation:beat 2s infinite;
+}
+@keyframes beat{
+  70%{box-shadow:0 0 0 7px rgba(210,84,75,0)}
+  100%{box-shadow:0 0 0 0 rgba(210,84,75,0)}
+}
+.tally{
+  margin-left:auto;font-family:'Barlow Condensed',sans-serif;
+  font-size:15px;font-weight:600;letter-spacing:.03em;color:var(--chalk);
+}
+.tally b{color:var(--green)}
+
+/* ---------- Cada selección ---------- */
+.leg{padding:14px 15px 16px;border-bottom:1px solid var(--line)}
+.leg:last-child{border-bottom:0}
+.leg__top{display:flex;align-items:baseline;gap:8px;margin-bottom:2px}
+.player{font-weight:600;font-size:15px;letter-spacing:-.01em}
+.odds{
+  margin-left:auto;color:var(--muted);font-size:12px;
+  font-variant-numeric:tabular-nums;
+}
+.market{color:var(--muted);font-size:13px;margin-bottom:14px}
+
+/* Barra: la pista, la burbuja del valor y el objetivo al final */
+.track{position:relative;height:3px;background:var(--line);border-radius:2px;margin:0 0 4px}
+.fill{
+  position:absolute;inset:0 auto 0 0;height:100%;border-radius:2px;
+  background:var(--amber);
+  width:0;transition:width 1.1s cubic-bezier(.22,1,.36,1);
+}
+.bubble{
+  position:absolute;top:50%;
+  transform:translate(-50%,-50%) scale(.6);
+  opacity:0;
+  background:var(--amber);color:#1B1206;
+  font-family:'Barlow Condensed',sans-serif;font-weight:700;
+  font-size:14px;line-height:1;letter-spacing:.02em;
+  padding:5px 9px;border-radius:20px;
+  font-variant-numeric:tabular-nums;
+  transition:left 1.1s cubic-bezier(.22,1,.36,1),transform .5s ease .3s,opacity .4s ease .3s;
+  white-space:nowrap;
+}
+.goal{
+  position:absolute;right:-2px;top:50%;transform:translate(100%,-50%);
+  padding-left:10px;color:var(--muted);
+  font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:14px;
+  font-variant-numeric:tabular-nums;
+}
+.leg.is-live .bubble,.leg.is-done .bubble,.leg.is-dead .bubble{opacity:1;transform:translate(-50%,-50%) scale(1)}
+.leg.is-done .fill{background:var(--green)}
+.leg.is-done .bubble{background:var(--green);color:#04150C}
+.leg.is-done .goal{color:var(--green)}
+.leg.is-dead .fill{background:var(--clay)}
+.leg.is-dead .bubble{background:var(--clay);color:#1B0705}
+.leg.is-good .fill{background:var(--green)}
+.leg.is-good .bubble{background:var(--green);color:#04150C}
+.leg.is-mid .fill{background:var(--amber)}
+.leg.is-bad .fill{background:var(--clay)}
+.leg.is-bad .bubble{background:var(--clay);color:#1B0705}
+.leg.is-unknown .fill{background:var(--line)}
+.leg.is-unknown .bubble{background:var(--line);color:var(--muted)}
+.empty{
+  margin:34px 18px;padding:26px 20px;text-align:center;
+  border:1px dashed var(--line);border-radius:var(--r);color:var(--muted);
+}
+.empty b{display:block;color:var(--chalk);font-family:'Barlow Condensed',sans-serif;
+  font-size:20px;font-weight:600;margin-bottom:6px}
+.note{
+  margin-top:14px;font-size:12.5px;color:var(--muted);
+  display:flex;align-items:center;gap:6px;
+}
+.note.warn{color:var(--clay)}
+.note.good{color:var(--green)}
+.chance{color:var(--chalk);font-weight:600;font-variant-numeric:tabular-nums}
+
+/* ---------- Pie ---------- */
+.foot{padding:6px 18px;color:var(--muted);font-size:11.5px;text-align:center;line-height:1.6}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+  .bubble{opacity:1;transform:translate(-50%,-50%)}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <h1>Mis apuestas</h1>
+  <span class="sub">En vivo</span>
+</header>
+
+<main id="app"></main>
+
+<p class="foot" id="foot">Cargando…</p>
+
+<script>
+const KEY = new URLSearchParams(location.search).get('k') || '';
+const REFRESCO_MS = 30000;   // el boxscore de MLB no cambia más rápido que esto
+const app  = document.getElementById('app');
+const foot = document.getElementById('foot');
+
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => (
+  {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]
+));
+
+function leg(l){
+  const pct  = Math.max(0, Math.min(100, Number(l.pct) || 0));
+  const meta = [l.market, l.line].filter(Boolean).join(' · ');
+  // En vivo el objetivo es un número; ya cumplida, un tilde.
+  const goal = l.state === 'done' ? '✓' : esc(l.goal ?? '');
+  const notaClase = l.state === 'done' || l.state === 'good' ? 'good'
+                  : (l.state === 'dead' || l.state === 'bad' ? 'warn' : '');
+  return `
+    <div class="leg is-${esc(l.state)}" data-pct="${pct}">
+      <div class="leg__top">
+        <span class="player">${esc(l.player)}</span>
+        ${l.odds ? `<span class="odds">${esc(l.odds)}</span>` : ''}
+      </div>
+      <div class="market">${esc(meta)}</div>
+      <div class="track">
+        <div class="fill"></div>
+        <div class="bubble">${esc(l.current ?? 0)}</div>
+        <span class="goal">${goal}</span>
+      </div>
+      ${l.note ? `<div class="note ${notaClase}">${esc(l.note)}</div>` : ''}
+    </div>`;
+}
+
+function ticket(t){
+  const marcador = (t.away_score ?? null) !== null
+    ? `<span class="score">${esc(t.away_score)} – ${esc(t.home_score)}</span>` : '';
+  const entrada = t.live && t.inning
+    ? `<span class="pulse"></span> ${esc(t.inning)}ª entrada ${esc(t.inning_state || '')}`
+    : (t.odds ? `Paga ${esc(t.odds)}` : 'Sin comenzar');
+  const [a, b] = String(t.match || '').split(' @ ');
+  return `
+    <section class="ticket">
+      <div class="ticket__head">
+        <div class="matchup">
+          ${esc(a || t.match)} ${b ? '<span class="at">@</span> ' + esc(b) : ''}
+          ${marcador}
+        </div>
+        <div class="meta">
+          ${entrada}
+          <span class="tally"><b>${esc(t.done)}</b> de ${esc(t.total)}</span>
+        </div>
+      </div>
+      ${(t.legs || []).map(leg).join('')}
+    </section>`;
+}
+
+function animar(){
+  document.querySelectorAll('.leg').forEach((el, i) => {
+    const pct = Math.max(0, Math.min(100, +el.dataset.pct || 0));
+    setTimeout(() => {
+      el.querySelector('.fill').style.width = pct + '%';
+      el.querySelector('.bubble').style.left = pct + '%';
+    }, 80 * i);
+  });
+}
+
+async function cargar(){
+  try{
+    const r = await fetch(`/api/bets?k=${encodeURIComponent(KEY)}`, {cache:'no-store'});
+    if(r.status === 401){
+      app.innerHTML = '<div class="empty"><b>Clave incorrecta</b>Revisá el enlace que usaste para entrar.</div>';
+      foot.textContent = '';
+      return;
+    }
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+
+    const data = await r.json();
+    if(!data.tickets || !data.tickets.length){
+      app.innerHTML = '<div class="empty"><b>Todavía no hay apuestas</b>Mandale una captura al bot en Telegram y aparece acá.</div>';
+      foot.textContent = '';
+      return;
+    }
+
+    app.innerHTML = data.tickets.map(ticket).join('');
+    animar();
+
+    const hora = new Date().toLocaleTimeString('es-AR', {hour:'2-digit', minute:'2-digit'});
+    foot.textContent = `Actualizado ${hora} · se refresca solo`;
+  }catch(e){
+    // Un error de red no debe borrar lo que ya se está mostrando.
+    foot.textContent = 'Sin conexión con el servidor — reintentando';
+  }
+}
+
+cargar();
+setInterval(cargar, REFRESCO_MS);
+// Al volver a la pantalla, refrescamos enseguida en vez de esperar el ciclo
+document.addEventListener('visibilitychange', () => {
+  if(!document.hidden) cargar();
+});
+</script>
+</body>
+</html>
