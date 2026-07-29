@@ -72,6 +72,11 @@ body{
   filter:drop-shadow(0 0 1px rgba(232,227,217,.35));
 }
 .team{display:inline-flex;align-items:center;gap:6px}
+.chip{
+  background:var(--amber);color:#1B1206;font-weight:700;font-size:12px;
+  padding:2px 8px;border-radius:20px;margin-right:8px;flex:none;
+  font-family:Inter,sans-serif;letter-spacing:.02em;
+}
 .score{
   font-variant-numeric:tabular-nums;font-weight:700;
   font-size:20px;margin-left:auto;letter-spacing:.04em;
@@ -96,6 +101,23 @@ body{
 .tally b{color:var(--green)}
 
 /* ---------- Cada selección ---------- */
+.ticket__head{cursor:pointer;-webkit-tap-highlight-color:transparent}
+.ticket__num{
+  font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:600;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
+  display:block;margin-bottom:3px;
+}
+.caret{
+  margin-left:8px;color:var(--muted);font-size:11px;
+  transition:transform .25s ease;display:inline-block;
+}
+.ticket.cerrado .caret{transform:rotate(-90deg)}
+.ticket.cerrado .legs{display:none}
+.aviso{
+  margin:0 15px 12px;padding:8px 10px;border-radius:8px;
+  background:rgba(210,84,75,.12);border:1px solid rgba(210,84,75,.3);
+  color:var(--clay);font-size:12px;
+}
 .leg{padding:14px 15px 16px;border-bottom:1px solid var(--line)}
 .leg:last-child{border-bottom:0}
 .leg__top{display:flex;align-items:baseline;gap:8px;margin-bottom:2px}
@@ -217,7 +239,7 @@ function equipo(nombre, logo){
   return `<span class="team">${img}${esc(nombre)}</span>`;
 }
 
-function ticket(t){
+function ticket(t, i, total){
   const marcador = (t.away_score ?? null) !== null
     ? `<span class="score">${esc(t.away_score)} – ${esc(t.home_score)}</span>` : '';
 
@@ -227,23 +249,41 @@ function ticket(t){
     : (t.start ? `🕐 ${esc(t.start)}` : 'Sin horario');
 
   const cuota = t.odds ? ` · Paga ${esc(t.odds)}` : '';
+  const etiqueta = t.label ? `<span class="chip">${esc(t.label)}</span>` : '';
   const [a, b] = String(t.match || '').split(' @ ');
 
+  // Las combinadas largas (11-15 tramos) arrancan plegadas: si no, una
+  // sola apuesta ocupa varias pantallas y no se pueden comparar entre sí.
+  const largo = (t.legs || []).length > 4;
+  const cerrado = largo ? ' cerrado' : '';
+
+  const numeracion = total > 1
+    ? `<span class="ticket__num">Apuesta ${i + 1} de ${total} · ${esc(t.total)} tramos</span>`
+    : (largo ? `<span class="ticket__num">${esc(t.total)} tramos</span>` : '');
+
+  // Si la casa declaraba más selecciones de las que leímos, avisamos:
+  // el conteo estaría incompleto y es mejor decirlo que fingir exactitud.
+  const faltan = t.declaradas && t.declaradas > t.total
+    ? `<div class="aviso">Leí ${esc(t.total)} de ${esc(t.declaradas)} selecciones.
+       Mandá el resto de la captura para completarla.</div>` : '';
+
   return `
-    <section class="ticket">
-      <div class="ticket__head">
+    <section class="ticket${cerrado}">
+      <div class="ticket__head" onclick="this.parentNode.classList.toggle('cerrado')">
+        ${numeracion}
         <div class="matchup">
-          ${equipo(t.away || a || t.match, t.away_logo)}
+          ${etiqueta}${equipo(t.away || a || t.match, t.away_logo)}
           <span class="at">@</span>
           ${equipo(t.home || b || '', t.home_logo)}
           ${marcador}
         </div>
         <div class="meta">
           ${estado}${cuota}
-          <span class="tally"><b>${esc(t.done)}</b> de ${esc(t.total)}</span>
+          <span class="tally"><b>${esc(t.done)}</b> de ${esc(t.total)}<span class="caret">▼</span></span>
         </div>
       </div>
-      ${(t.legs || []).map(leg).join('')}
+      ${faltan}
+      <div class="legs">${(t.legs || []).map(leg).join('')}</div>
     </section>`;
 }
 
@@ -274,7 +314,8 @@ async function cargar(){
       return;
     }
 
-    app.innerHTML = data.tickets.map(ticket).join('');
+    const n = data.tickets.length;
+    app.innerHTML = data.tickets.map((t, i) => ticket(t, i, n)).join('');
     animar();
 
     const hora = new Date().toLocaleTimeString('es-AR', {hour:'2-digit', minute:'2-digit'});

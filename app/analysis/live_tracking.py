@@ -141,15 +141,21 @@ def _check_active_status(
 
         return "❓ no pude confirmar su estado"
 
-    # Bateador: sin sustitución explícita en los datos, usamos batting_order
-    # como señal débil.
+    # Bateador. Ojo con `isOnBench`: la API lo pone en true para cualquier
+    # jugador que no esté bateando EN ESE INSTANTE, incluidos los titulares
+    # mientras su equipo defiende. Usarlo solo daba falsos "está en el
+    # banco" y pintaba de rojo legs con 80% de probabilidad.
+    #
+    # Por eso el orden de bateo manda: si tiene uno asignado, es titular.
     if player_stats.get("is_current_batter"):
         return "🟢 bateando ahora mismo"
-    if player_stats.get("is_on_bench"):
-        return "🔴 está en el banco"
     if player_stats.get("batting_order") is not None:
-        return "🟢 en el line-up (no puedo confirmar si sigue EN CANCHA ahora mismo)"
-    return "❓ no pude confirmar — revisá el line-up en la app de la casa de apuestas"
+        return "🟢 en el line-up"
+    if player_stats.get("is_on_bench"):
+        # Sin orden de bateo y en el banco: suplente que todavía no entró.
+        # No lo damos por perdido; todavía puede entrar.
+        return "❓ suplente, todavía no entró al partido"
+    return "❓ no pude confirmar — revisá el line-up en la casa de apuestas"
 
 
 def track_leg_live(leg: dict, boxscore: dict, live_state: dict) -> LiveLegStatus:

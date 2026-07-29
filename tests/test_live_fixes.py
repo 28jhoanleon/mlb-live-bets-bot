@@ -109,14 +109,29 @@ class TestEstadoDelPitcher:
         )
         assert "❓" in estado
 
-    def test_bateador_en_el_banco(self):
+    def test_titular_no_se_marca_como_banco(self):
+        """Bug: `isOnBench` da true para cualquier jugador que no esté
+        bateando en ese instante, incluidos los titulares mientras su
+        equipo defiende. Pintaba de rojo legs con 80% de probabilidad."""
         estado = _check_active_status(
             "Bateador Y",
             {"is_on_bench": True, "batting_order": "500", "pitching": {}},
             is_pitcher=False,
             current_pitcher=None,
         )
-        assert "🔴" in estado
+        assert "🟢" in estado
+        assert "banco" not in estado
+
+    def test_suplente_sin_orden_de_bateo_no_se_da_por_perdido(self):
+        """Todavía puede entrar al partido: no es rojo, es incertidumbre."""
+        estado = _check_active_status(
+            "Suplente Z",
+            {"is_on_bench": True, "batting_order": None, "pitching": {}},
+            is_pitcher=False,
+            current_pitcher=None,
+        )
+        assert "🔴" not in estado
+        assert "❓" in estado
 
 
 class TestBarraEstiloStake:

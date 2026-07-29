@@ -284,7 +284,7 @@ async def _format_full_analysis(analysis: dict) -> str:
 
 
 async def _procesar_y_responder(
-    imagenes: list[bytes], processing_msg, chat_id: int, acumular: bool = True
+    imagenes: list[bytes], processing_msg, chat_id: int, etiqueta: str | None = None, acumular: bool = True
 ) -> None:
     """Analiza las capturas y responde.
 
@@ -306,7 +306,14 @@ async def _procesar_y_responder(
             except Exception:
                 pass  # el edit es cosmético, no debe cortar el análisis
         try:
-            analisis.append(analyze_bet_screenshot(img))
+            leido = analyze_bet_screenshot(img)
+            if etiqueta:
+                # La etiqueta pisa lo que haya deducido la IA: es la señal
+                # explícita del usuario sobre a qué apuesta pertenece esto.
+                leido["label"] = etiqueta
+                for bet in leido.get("bets", []) or []:
+                    bet["label"] = etiqueta
+            analisis.append(leido)
         except VisionAnalysisError as exc:
             log.warning("Falló el análisis de una captura: %s", exc)
             fallidas += 1
@@ -361,7 +368,9 @@ async def _procesar_y_responder(
     await edit_then_send_rest(processing_msg, f"_{encabezado}_\n\n{result_text}")
 
 
-async def _procesar_album(media_group_id: str, processing_msg, chat_id: int) -> None:
+async def _procesar_album(
+    media_group_id: str, processing_msg, chat_id: int, etiqueta: str | None = None
+) -> None:
     """Espera a que lleguen todas las fotos del álbum y las procesa juntas."""
     try:
         await esperar_resto_del_album()
@@ -373,7 +382,7 @@ async def _procesar_album(media_group_id: str, processing_msg, chat_id: int) -> 
         return
 
     await processing_msg.edit_text(f"🔍 Analizando {len(imagenes)} capturas...")
-    await _procesar_y_responder(imagenes, processing_msg, chat_id)
+    await _procesar_y_responder(imagenes, processing_msg, chat_id, etiqueta=etiqueta)
 
 
 async def handle_bet_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -390,13 +399,20 @@ async def handle_bet_screenshot(update: Update, context: ContextTypes.DEFAULT_TY
 
     media_group_id = update.message.media_group_id
 
-    # Las capturas se acumulan solas: no hace falta escribir nada. Si la
-    # apuesta es de otro partido queda como ticket aparte; si es del
-    # mismo, se fusionan las legs sin duplicar. Para arrancar de cero
-    # está /nueva.
+    # Etiqueta opcional en el pie de foto. Sirve para combinadas largas:
+    # al desplegar 11 tramos, las capturas muestran las selecciones SIN el
+    # encabezado de la tarjeta, así que ni la IA ni nosotros podemos saber
+    # a qué apuesta pertenecen. Escribiendo la misma etiqueta en todas
+    # (ej. "1"), quedan agrupadas sin depender de que el modelo acierte.
+    etiqueta = (update.message.caption or "").strip()[:20] or None
+
+    # Sin etiqueta las capturas igual se acumulan solas: si son de otro
+    # partido quedan como ticket aparte, y si son del mismo se fusionan
+    # sin duplicar. Para arrancar de cero está /nueva.
     if not media_group_id:
-        processing_msg = await update.message.reply_text("🔍 Analizando la captura...")
-        await _procesar_y_responder([image_bytes], processing_msg, chat_id)
+        aviso = f"🔍 Analizando captura de la apuesta *{etiqueta}*..." if etiqueta else "🔍 Analizando la captura..."
+        processing_msg = await update.message.reply_text(aviso, parse_mode="Markdown")
+        await _procesar_y_responder([image_bytes], processing_msg, chat_id, etiqueta=etiqueta)
         return
 
     # Álbum: las fotos llegan en mensajes separados. Acumulamos y
@@ -406,6 +422,9 @@ async def handle_bet_screenshot(update: Update, context: ContextTypes.DEFAULT_TY
     es_primera = media_group_id not in _albumes_avisados
     cancelar_espera(media_group_id)
     grupo = agregar_imagen(media_group_id, image_bytes)
+    if etiqueta:
+        # En un álbum alcanza con que UNA de las fotos traiga la etiqueta
+        setattr(grupo, 'etiqueta', etiqueta)
     recibidas = len(grupo.imagenes)
 
     if es_primera:
@@ -422,7 +441,9 @@ async def handle_bet_screenshot(update: Update, context: ContextTypes.DEFAULT_TY
             await processing_msg.edit_text(f"📥 Recibiendo capturas... ({recibidas})")
         except Exception:
             pass  # editar de más no debe romper el flujo
-    tarea = asyncio.create_task(_procesar_album(media_group_id, processing_msg, chat_id))
+    tarea = asyncio.create_task(
+        _procesar_album(media_group_id, processing_msg, chat_id, getattr(grupo, 'etiqueta', None))
+    )
     registrar_espera(media_group_id, tarea)
 
     # Limpieza: cuando la tarea termina, el álbum ya no se sigue

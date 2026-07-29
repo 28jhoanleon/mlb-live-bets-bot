@@ -46,17 +46,26 @@ def _match_key(texto: str | None) -> str:
 
 
 def _dividir_por_partido(ticket: dict[str, Any]) -> list[dict[str, Any]]:
-    """Red de seguridad: si un ticket trae legs de partidos distintos,
-    lo parte en uno por partido.
+    """Red de seguridad para cuando la IA junta varias tarjetas en una.
 
-    Por qué hace falta: la IA a veces junta en un solo ticket varias
-    tarjetas que están una al lado de la otra en la captura. Confiar solo
-    en que el modelo acierte daría conteos y probabilidades sin sentido
-    (11 legs de 4 apuestas distintas tratadas como una combinada única).
+    OJO con el criterio: "legs de partidos distintos" NO significa
+    tickets distintos. Una combinada normal de varios partidos (11 o 15
+    tramos) es UN solo ticket con legs de muchos juegos. Partirla estaría
+    igual de mal que fusionar cuatro tickets en uno.
 
-    Solo aplica cuando las legs declaran su partido y son más de uno.
+    Lo que sí identifica a un ticket real es su CUOTA TOTAL: es el número
+    que la casa muestra en la tarjeta. Si el ticket la tiene, confiamos en
+    que la IA leyó bien un recuadro y no lo tocamos.
+
+    Solo dividimos cuando no hay cuota total Y las legs abarcan varios
+    partidos: ahí es probable que la IA haya mezclado tarjetas vecinas.
     """
     legs = ticket.get("legs") or []
+
+    # La cuota total es la huella de un ticket real: no lo partimos.
+    if ticket.get("total_odds"):
+        return [ticket]
+
     partidos = {_match_key(leg.get("match")) for leg in legs if leg.get("match")}
 
     # Un solo partido (o legs sin partido declarado): se deja como está
@@ -70,7 +79,6 @@ def _dividir_por_partido(ticket: dict[str, Any]) -> list[dict[str, Any]]:
     return [
         {
             "match": grupo[0].get("match", ""),
-            # La cuota total del ticket original ya no aplica a las partes
             "total_odds": None,
             "is_live": ticket.get("is_live", False),
             "legs": grupo,
@@ -94,6 +102,8 @@ def normalize(analysis: dict[str, Any]) -> list[dict[str, Any]]:
             ticket = {
                 "match": bet.get("match") or (legs[0].get("match") if legs else ""),
                 "total_odds": bet.get("total_odds"),
+                "label": bet.get("label") or analysis.get("label"),
+                "legs_declaradas": bet.get("legs_declaradas"),
                 "is_live": bool(bet.get("is_live", analysis.get("is_live"))),
                 "legs": legs,
             }
@@ -135,6 +145,7 @@ def _fusionar_ticket(a: dict, b: dict) -> dict:
 
     return {
         "match": a.get("match") or b.get("match"),
+        "label": a.get("label") or b.get("label"),
         "total_odds": a.get("total_odds") or b.get("total_odds"),
         "is_live": bool(a.get("is_live") or b.get("is_live")),
         "legs": legs,
@@ -142,6 +153,13 @@ def _fusionar_ticket(a: dict, b: dict) -> dict:
 
 
 def _ticket_key(ticket: dict) -> tuple:
+    # Si el usuario puso una etiqueta en el pie de foto, manda ella: es la
+    # única señal confiable cuando la captura no muestra el encabezado de
+    # la tarjeta (pasa siempre al desplegar una combinada larga).
+    etiqueta = str(ticket.get("label") or "").strip().lower()
+    if etiqueta:
+        return ("label", etiqueta)
+
     """Dos tickets son el mismo si son del mismo partido y tienen la
     misma cuota total. Sin la cuota, dos SGM distintos del mismo partido
     se fusionarían por error."""

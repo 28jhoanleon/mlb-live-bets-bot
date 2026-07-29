@@ -151,13 +151,15 @@ class TestRedDeSeguridadPorPartido:
             "line": "Over 0.5",
         }
 
-    def test_separa_un_ticket_con_legs_de_varios_partidos(self):
+    def test_separa_solo_si_no_hay_cuota_total(self):
+        """Sin cuota total, legs de varios partidos sugieren que la IA
+        mezcló tarjetas vecinas."""
         mezclado = {
             "is_live": True,
             "bets": [
                 {
                     "match": "Pirates - Diamondbacks",
-                    "total_odds": "2.95",
+                    "total_odds": None,
                     "legs": [
                         self._leg("Pirates - Diamondbacks", "Keller"),
                         self._leg("Pirates - Diamondbacks", "Kelly"),
@@ -199,14 +201,38 @@ class TestRedDeSeguridadPorPartido:
         assert len(tickets[0]["legs"]) == 3
         assert tickets[0]["total_odds"] == "2.95"
 
+    def test_una_combinada_de_varios_partidos_no_se_parte(self):
+        """El caso real que rompía: una combinada de 11 tramos con legs
+        de muchos partidos es UN ticket, no once. La cuota total es la
+        prueba de que la tarjeta existe."""
+        multi = {
+            "bets": [
+                {
+                    "match": "Varios",
+                    "total_odds": "23.73",
+                    "legs": [
+                        self._leg("Phillies - Marlins", "Schwarber"),
+                        self._leg("D-backs - Pirates", "Moreno"),
+                        self._leg("Nationals - Blue Jays", "Abrams"),
+                    ],
+                }
+            ]
+        }
+
+        tickets = normalize(multi)
+
+        assert len(tickets) == 1
+        assert len(tickets[0]["legs"]) == 3
+        assert tickets[0]["total_odds"] == "23.73"
+
     def test_descarta_la_cuota_total_al_separar(self):
-        """La cuota total del ticket original ya no aplica a las partes:
-        mostrarla sería mentir sobre lo que paga cada una."""
+        """Cuando SÍ hay que separar, la cuota original no aplica a las
+        partes: mostrarla sería mentir sobre lo que paga cada una."""
         mezclado = {
             "bets": [
                 {
                     "match": "A - B",
-                    "total_odds": "5.60",
+                    "total_odds": None,
                     "legs": [self._leg("A - B", "Uno"), self._leg("C - D", "Dos")],
                 }
             ]
@@ -232,3 +258,65 @@ class TestRedDeSeguridadPorPartido:
         }
 
         assert len(normalize(sin_match)) == 1
+
+
+class TestCombinadasDeVariosPartidos:
+    """El caso de las apuestas reales del usuario: '11 Multi tramo' con
+    cuota 23,73 y '15 Multi tramo' con 68,43. Son DOS tickets, cada uno
+    con legs de muchos partidos distintos.
+
+    El error anterior fue asumir que partidos distintos implicaban
+    tickets distintos: eso partía una combinada de 11 en varias tarjetas
+    sueltas y arruinaba el conteo y la probabilidad.
+    """
+
+    def _leg(self, match, player):
+        return {"match": match, "player": player, "market": "Hits", "line": "Over 0.5"}
+
+    def test_dos_combinadas_largas_quedan_como_dos_tickets(self):
+        captura = {
+            "is_live": True,
+            "bets": [
+                {
+                    "match": "Varios",
+                    "total_odds": "23.73",
+                    "legs": [
+                        self._leg("Phillies - Marlins", "Schwarber"),
+                        self._leg("D-backs - Pirates", "Moreno"),
+                        self._leg("Nationals - Blue Jays", "Abrams"),
+                    ],
+                },
+                {
+                    "match": "Varios",
+                    "total_odds": "68.43",
+                    "legs": [
+                        self._leg("Mets - Braves", "Ewing"),
+                        self._leg("Tigers - Orioles", "McGonigle"),
+                    ],
+                },
+            ],
+        }
+
+        tickets = normalize(captura)
+
+        assert len(tickets) == 2
+        assert len(tickets[0]["legs"]) == 3
+        assert len(tickets[1]["legs"]) == 2
+        assert {t["total_odds"] for t in tickets} == {"23.73", "68.43"}
+
+    def test_conserva_el_numero_de_tramos_declarado(self):
+        """Si la casa dice '11 Multi tramo' pero leímos 6, hay que poder
+        avisar que la captura quedó incompleta."""
+        captura = {
+            "bets": [{
+                "match": "Varios",
+                "total_odds": "23.73",
+                "legs_declaradas": 11,
+                "legs": [self._leg("A - B", "Uno"), self._leg("C - D", "Dos")],
+            }]
+        }
+
+        ticket = normalize(captura)[0]
+
+        assert ticket["legs_declaradas"] == 11
+        assert len(ticket["legs"]) == 2

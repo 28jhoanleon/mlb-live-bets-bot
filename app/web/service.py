@@ -154,6 +154,7 @@ def estado_apuestas(chat_id: int) -> dict[str, Any]:
             away_nombre, home_nombre = _equipos_de(ticket.get("match", ""))
 
         cabecera: dict[str, Any] = {
+            "label": ticket.get("label"),
             "match": partido_corto(ticket.get("match")),
             "away": nombre_corto(away_nombre),
             "home": nombre_corto(home_nombre),
@@ -162,6 +163,7 @@ def estado_apuestas(chat_id: int) -> dict[str, Any]:
             "start": formato_hora_fecha(partido.get("game_time_utc")) if partido else None,
             "status": partido.get("status") if partido else None,
             "odds": ticket.get("total_odds"),
+            "declaradas": ticket.get("legs_declaradas"),
             "legs": legs,
             "done": cumplidas,
             "total": len(legs),

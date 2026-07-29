@@ -30,6 +30,22 @@ Tu tarea es identificar, de la imagen que te pasan, TODAS las selecciones de apu
 - línea
 - cuota (odds decimal o americana, como esté en la imagen; null si la casa solo muestra la cuota total de la combinada)
 
+REGLA CLAVE SOBRE "total_odds":
+Es ÚNICAMENTE el número grande del encabezado de la tarjeta, el que está
+al lado de textos como "Multi tramo", "Multi apuesta del mismo partido",
+"Parlay" o "SGM" (ej: "11 Multi tramo   23,73" -> total_odds "23.73").
+
+NUNCA uses la cuota de una selección individual como total_odds.
+Si en la imagen NO se ve ese encabezado con su número, poné total_odds
+en null. Es correcto y esperable: significa que la captura muestra solo
+las selecciones, sin la cabecera.
+
+UNA COMBINADA PUEDE CRUZAR VARIOS PARTIDOS:
+Un "Multi tramo" de 11 selecciones repartidas en 8 juegos distintos es
+UNA sola apuesta, no ocho. No la separes por partido. Solo son tickets
+distintos si ves recuadros separados, cada uno con SU propio encabezado
+y su propia cuota total.
+
 IMPORTANTE — NORMALIZACIÓN. La captura puede estar en cualquier idioma, pero vos SIEMPRE devolvés estos dos campos traducidos al inglés estándar:
 
 "line": siempre "Over X" o "Under X".
@@ -74,6 +90,7 @@ Formato:
     {
       "match": "Equipo A vs Equipo B",
       "total_odds": "2.95",
+      "legs_declaradas": 11,
       "is_live": true,
       "legs": [
         {
@@ -94,9 +111,20 @@ Formato:
 - "odds" dentro de cada leg: la cuota individual, o null si la casa solo
   muestra la cuota total del ticket.
 - "match" dentro de cada leg: el partido al que pertenece ESA selección.
-  Todas las legs de un mismo ticket comparten partido en una "Multi
-  apuesta del mismo partido". Si ves legs de partidos distintos, es señal
-  de que son TICKETS DISTINTOS y hay que separarlos.
+- "legs_declaradas": si la tarjeta dice cuántas selecciones tiene
+  ("11 Multi tramo", "Multi apuesta del mismo partido (4)"), poné ese
+  número. Sirve para detectar capturas incompletas. null si no figura.
+
+CUIDADO — varios partidos NO significa varias apuestas.
+Una combinada puede tener 11 o 15 selecciones de PARTIDOS DIFERENTES y
+seguir siendo UN SOLO ticket. Lo que separa un ticket de otro es la
+TARJETA y su CUOTA TOTAL, nunca la cantidad de partidos que toca.
+
+  "11 Multi tramo ... 23,73"  -> UN ticket con 11 legs de varios partidos
+  Dos tarjetas con dos cuotas -> DOS tickets
+
+Ante la duda, agrupá: partir una combinada larga en pedazos rompe el
+cálculo de probabilidad más de lo que lo rompe juntarlas.
 
 "is_live" es true si la imagen muestra una etiqueta "Live", un inning en curso, o cualquier indicador de que el partido ya empezó. Si no hay ninguna señal de eso, poné false."""
 
