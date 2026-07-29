@@ -24,9 +24,10 @@ from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Route
 
+from app.analysis.probability import ProbabilityError
 from app.db.database import init_db
 from app.utils.logger import get_logger
-from app.web.service import estado_apuestas
+from app.web.service import detalle_leg, estado_apuestas
 
 log = get_logger(__name__)
 
@@ -73,6 +74,23 @@ async def bets(request: Request) -> JSONResponse:
         return JSONResponse({"detail": "No pude leer las apuestas"}, status_code=500)
 
 
+async def leg_detail(request: Request) -> JSONResponse:
+    if not _clave_ok(request.query_params.get("k")):
+        return JSONResponse({"detail": "Clave incorrecta"}, status_code=401)
+
+    player = request.query_params.get("player", "")
+    market = request.query_params.get("market", "")
+    line = request.query_params.get("line", "")
+
+    try:
+        return JSONResponse(detalle_leg(player, market, line))
+    except ProbabilityError as e:
+        return JSONResponse({"detail": str(e)}, status_code=404)
+    except Exception:
+        log.exception("Error armando el detalle de la leg")
+        return JSONResponse({"detail": "No pude traer el detalle de este jugador"}, status_code=500)
+
+
 async def index(request: Request) -> FileResponse:
     return FileResponse(ESTATICOS / "index.html")
 
@@ -91,5 +109,6 @@ app = Starlette(
         Route("/", index),
         Route("/health", health),
         Route("/api/bets", bets),
+        Route("/api/leg-detail", leg_detail),
     ]
 )

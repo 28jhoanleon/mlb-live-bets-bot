@@ -138,39 +138,6 @@ def find_value_combos(
 
 # --- Soñadoras -------------------------------------------------------
 
-# Cuota a partir de la cual una combinada se considera "soñadora".
-_CUOTA_SONADORA = 10.0
-# Piso de probabilidad por leg más bajo que en /value: para llegar a
-# cuota alta hacen falta legs menos probables. Pero el filtro de valor
-# (probabilidad real > implícita en la cuota) se mantiene igual.
-_MIN_PROB_LEG_SONADORA = 40.0
-
-
-def find_dream_combos(
-    min_odds: float = _CUOTA_SONADORA,
-    max_results: int = 3,
-    max_events: int = 5,
-) -> list[ValueCombo]:
-    """Combinadas de cuota alta, ordenadas por probabilidad.
-
-    Una soñadora es por definición improbable: si pagara mucho Y fuera
-    probable, el mercado ya la habría corregido. Lo que sí se puede
-    hacer es, entre todas las que llegan a la cuota buscada, elegir la
-    de MAYOR probabilidad — y exigir que el valor esperado siga siendo
-    positivo, para que sea una apuesta arriesgada y no una regalada.
-    """
-    return find_value_combos(
-        min_legs=3,
-        max_legs=6,
-        max_results=max_results,
-        min_prob_combo=0.0,     # acá el piso lo pone la cuota, no la probabilidad
-        min_prob_leg=_MIN_PROB_LEG_SONADORA,
-        min_odds=min_odds,
-        max_events=max_events,
-        max_pool=10,
-    )
-
-
 # --- Soñadoras -----------------------------------------------------------
 #
 # Una soñadora es una combinada larga de cuota alta. Por definición tiene

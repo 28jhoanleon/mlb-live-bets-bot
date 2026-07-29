@@ -21,6 +21,7 @@ from app.analysis.probability import (
     ProbabilityError,
     _classify_batter_market,
     _classify_pitcher_market,
+    _normalize,
     _parse_line,
 )
 from app.mlb.live import find_live_game_by_teams, get_live_boxscore, get_live_game
@@ -169,8 +170,14 @@ def track_leg_live(leg: dict, boxscore: dict, live_state: dict) -> LiveLegStatus
     player_stats = boxscore.get(player_name)
     resolved_name = player_name
     if not player_stats:
+        # La IA lee la captura y suele perder tildes ("Arraez" en vez de
+        # "Arráez"), pero la MLB Stats API sí las conserva en fullName.
+        # Sin normalizar esto, una leg de un partido EN VIVO caía al
+        # fallback histórico solo porque no encontrábamos al jugador.
+        buscado = _normalize(player_name)
         for name, stats in boxscore.items():
-            if player_name.lower() in name.lower() or name.lower() in player_name.lower():
+            candidato = _normalize(name)
+            if buscado in candidato or candidato in buscado:
                 player_stats = stats
                 resolved_name = name
                 break

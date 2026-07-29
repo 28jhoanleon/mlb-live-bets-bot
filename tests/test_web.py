@@ -422,17 +422,26 @@ class TestPartidosTerminados:
 
 
 class TestSinFuncionesDuplicadas:
-    """Bug real: quedaron dos `_armar_grupo` en el archivo y la segunda
-    (vieja, sin el campo `terminado`) pisaba a la buena. Los partidos
-    terminados nunca se marcaban como tales."""
+    """Bug real (van dos veces): primero dos `_armar_grupo` en
+    app/web/service.py (la vieja, sin el campo `terminado`, pisaba a la
+    buena) y después dos `find_dream_combos` en app/analysis/combos.py.
+    El test original solo miraba service.py y por eso no agarró la
+    segunda — ahora recorre TODO app/."""
 
-    def test_una_sola_definicion_de_cada_funcion(self):
+    def test_una_sola_definicion_de_cada_funcion_por_archivo(self):
         import re
         from pathlib import Path
 
-        import app.web.service as servicio
+        raiz = Path(__file__).resolve().parent.parent / "app"
+        archivos = [p for p in raiz.rglob("*.py") if "__pycache__" not in p.parts]
+        assert archivos, "no encontré archivos .py en app/"
 
-        fuente = Path(servicio.__file__).read_text(encoding="utf-8")
-        nombres = re.findall(r"^def (\w+)", fuente, re.M)
-        duplicados = {n for n in nombres if nombres.count(n) > 1}
-        assert not duplicados, f"funciones duplicadas: {duplicados}"
+        problemas = {}
+        for archivo in archivos:
+            fuente = archivo.read_text(encoding="utf-8")
+            nombres = re.findall(r"^def (\w+)", fuente, re.M)
+            duplicados = {n for n in nombres if nombres.count(n) > 1}
+            if duplicados:
+                problemas[str(archivo.relative_to(raiz.parent))] = duplicados
+
+        assert not problemas, f"funciones duplicadas por archivo: {problemas}"

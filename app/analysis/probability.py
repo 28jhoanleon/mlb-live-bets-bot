@@ -147,7 +147,14 @@ def _classify_pitcher_market(market_text: str) -> list[str]:
     raise ProbabilityError(f"Mercado de pitcheo no reconocido: '{market_text}'")
 
 
-def estimate_leg_probability(player_name: str, market_text: str, line_text: str) -> LegEstimate:
+def _cargar_jugador_y_partidos(
+    player_name: str, market_text: str, line_text: str, sample: int = _DEFAULT_SAMPLE
+) -> tuple[dict, str, float, bool, list[str], list[dict]]:
+    """Busca al jugador y sus últimos partidos para el mercado pedido.
+
+    Compartido por estimate_leg_probability y estimate_leg_detail para
+    no repetir la misma búsqueda dos veces (y no terminar con dos
+    versiones de la misma lógica pisándose, como ya pasó antes)."""
     if not player_name or not line_text:
         raise ProbabilityError("Falta jugador o línea para poder estimar probabilidad.")
 
@@ -160,15 +167,23 @@ def estimate_leg_probability(player_name: str, market_text: str, line_text: str)
 
     if is_pitcher:
         stat_fields = _classify_pitcher_market(market_text)
-        games = get_recent_pitching_games(player["id"], last_n=_DEFAULT_SAMPLE)
+        games = get_recent_pitching_games(player["id"], last_n=sample)
     else:
         stat_fields = _classify_batter_market(market_text)
-        games = get_recent_hitting_games(player["id"], last_n=_DEFAULT_SAMPLE)
+        games = get_recent_hitting_games(player["id"], last_n=sample)
 
     if not games:
         raise ProbabilityError(
             f"No hay partidos recientes registrados para {player['full_name']} esta temporada."
         )
+
+    return player, side, threshold, is_pitcher, stat_fields, games
+
+
+def estimate_leg_probability(player_name: str, market_text: str, line_text: str) -> LegEstimate:
+    player, side, threshold, is_pitcher, stat_fields, games = _cargar_jugador_y_partidos(
+        player_name, market_text, line_text
+    )
 
     values = [sum(g.get(f, 0) for f in stat_fields) for g in games]
     hits_condition = (
@@ -188,4 +203,53 @@ def estimate_leg_probability(player_name: str, market_text: str, line_text: str)
         sample_size=len(values),
         avg_value=avg_value,
         is_pitcher=is_pitcher,
+    )
+
+
+@dataclass
+class GameLogEntry:
+    date: str | None
+    value: float
+    hit: bool  # si ESE partido cumplió la línea
+
+
+@dataclass
+class LegDetail:
+    """Igual que LegEstimate pero con el desglose partido por partido,
+    para cuando el usuario pide profundizar en un jugador puntual en
+    vez de quedarse con el resumen ('90% en sus últimos 10')."""
+    player: str
+    market: str
+    side: str
+    threshold: float
+    probability_pct: float
+    avg_value: float
+    is_pitcher: bool
+    games: list[GameLogEntry]
+
+
+def estimate_leg_detail(player_name: str, market_text: str, line_text: str) -> LegDetail:
+    player, side, threshold, is_pitcher, stat_fields, games = _cargar_jugador_y_partidos(
+        player_name, market_text, line_text
+    )
+
+    entries = []
+    for g in games:
+        valor = sum(g.get(f, 0) for f in stat_fields)
+        cumplio = valor > threshold if side == "Over" else valor < threshold
+        entries.append(GameLogEntry(date=g.get("date"), value=valor, hit=cumplio))
+
+    hits_condition = sum(1 for e in entries if e.hit)
+    probability_pct = round(hits_condition / len(entries) * 100, 1) if entries else 0.0
+    avg_value = round(sum(e.value for e in entries) / len(entries), 2) if entries else 0.0
+
+    return LegDetail(
+        player=player["full_name"],
+        market=market_text,
+        side=side,
+        threshold=threshold,
+        probability_pct=probability_pct,
+        avg_value=avg_value,
+        is_pitcher=is_pitcher,
+        games=entries,
     )

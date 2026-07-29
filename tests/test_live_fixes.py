@@ -241,6 +241,52 @@ class TestBarraDeFormaReciente:
         assert vivo.count(_FILLED) + vivo.count(_EMPTY) == 12
 
 
+class TestNombreConTildes:
+    """Bug real: la captura decía 'Luis Arraez' (la IA suele perder
+    tildes) pero la MLB Stats API devuelve 'Luis Arráez' en el
+    boxscore. El match era comparación literal -> no lo encontraba ->
+    ProbabilityError -> la web caía al fallback histórico aunque el
+    partido estuviera en vivo y el resto de las legs del mismo partido
+    sí mostraran datos en vivo."""
+
+    def _box(self):
+        return {
+            "Luis Arráez": {
+                "player_id": 1,
+                "is_current_batter": False,
+                "batting_order": "3",
+                "is_on_bench": False,
+                "batting": {"hits": 1, "runs": 1, "rbi": 0},
+                "pitching": {},
+            }
+        }
+
+    def _track(self, player_leg_name):
+        from unittest.mock import patch
+
+        from app.analysis.live_tracking import track_leg_live
+
+        with patch(
+            "app.analysis.live_tracking.search_player",
+            return_value={"id": 1, "full_name": "Luis Arráez", "position": "Hitter"},
+        ):
+            return track_leg_live(
+                {"player": player_leg_name, "market": "Hits + Runs + RBIs", "line": "Over 0.5"},
+                self._box(),
+                {"inning": 5, "inning_state": "Bottom", "status": "In Progress"},
+            )
+
+    def test_encuentra_al_jugador_sin_tilde_en_la_leg(self):
+        status = self._track("Luis Arraez")
+        assert status.player == "Luis Arráez"
+        assert status.already_hit is True
+
+    def test_encuentra_al_jugador_con_tilde_en_la_leg(self):
+        """No romper el caso en que la captura sí trae la tilde."""
+        status = self._track("Luis Arráez")
+        assert status.already_hit is True
+
+
 class TestMercadosUnder:
     """Bug serio: en un Under, `current < threshold` es cierto desde el
     primer lanzamiento (0 ponches ya es 'menos de 5.5'), así que la leg

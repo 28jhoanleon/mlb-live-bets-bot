@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.analysis.live_tracking import get_live_tracking_for_match, track_leg_live
-from app.analysis.probability import ProbabilityError, estimate_leg_probability
+from app.analysis.probability import ProbabilityError, estimate_leg_detail, estimate_leg_probability
 from app.analysis.tickets import normalize
 from app.db.database import get_active_bet
 from app.mlb.schedule import buscar_partido
@@ -225,3 +225,21 @@ def estado_apuestas(chat_id: int) -> dict[str, Any]:
         })
 
     return {"tickets": salida, "count": len(salida)}
+
+
+def detalle_leg(player: str, market: str, line: str) -> dict[str, Any]:
+    """Desglose partido-por-partido de una leg puntual. Es lo que pide
+    el botón de 'profundizar' en cada leg: no el resumen ('90% en sus
+    últimos 10'), sino el detalle de cada uno de esos partidos."""
+    detalle = estimate_leg_detail(player, market, line)
+    return {
+        "player": detalle.player,
+        "market": nombre_stake(market) or market,
+        "side": detalle.side,
+        "threshold": detalle.threshold,
+        "probability_pct": detalle.probability_pct,
+        "avg_value": detalle.avg_value,
+        "games": [
+            {"date": g.date, "value": g.value, "hit": g.hit} for g in detalle.games
+        ],
+    }
