@@ -144,6 +144,14 @@ body{
   70%{box-shadow:0 0 0 7px rgba(210,84,75,0)}
   100%{box-shadow:0 0 0 0 rgba(210,84,75,0)}
 }
+.ticket__head{cursor:pointer;-webkit-tap-highlight-color:transparent}
+.ticket__head:active{opacity:.85}
+.chevron{
+  display:inline-block;color:var(--muted);font-size:15px;line-height:1;
+  transition:transform .15s ease;margin-left:4px;
+}
+.ticket.is-collapsed .chevron{transform:rotate(-90deg)}
+.ticket.is-collapsed .ticket__body{display:none}
 .tally{
   margin-left:auto;font-family:'Barlow Condensed',sans-serif;
   font-size:15px;font-weight:600;letter-spacing:.03em;color:var(--chalk);
@@ -300,6 +308,8 @@ body{
 }
 .leg.is-unknown .fill{background:var(--line)}
 .leg.is-unknown .bubble{background:var(--line);color:var(--muted)}
+.leg.is-warn .fill{background:var(--amber)}
+.leg.is-warn .bubble{background:var(--amber);color:#1B0705}
 .empty{
   margin:34px 18px;padding:26px 20px;text-align:center;
   border:1px dashed var(--line);border-radius:var(--r);color:var(--muted);
@@ -368,7 +378,7 @@ function leg(l){
   const goal = l.state === 'done' ? '✓'
              : (l.state === 'lost' ? '✗' : esc(l.goal ?? ''));
   const notaClase = l.state === 'done' || l.state === 'good' ? 'good'
-                  : (l.state === 'dead' || l.state === 'bad' ? 'warn' : '');
+                  : (l.state === 'dead' || l.state === 'bad' || l.state === 'warn' ? 'warn' : '');
   const params = new URLSearchParams({
     k: KEY, player: l.player ?? '', market: l.market ?? '', line: l.line ?? '',
   }).toString();
@@ -467,7 +477,14 @@ function grupo(g){
     </div>`;
 }
 
-function ticket(t){
+const _colapsoManual = new Map();
+
+function claveTicket(t, i){
+  const primerMatch = (t.grupos && t.grupos[0] && t.grupos[0].match) || '';
+  return [t.label || '', t.odds || '', primerMatch, t.total, i].join('|');
+}
+
+function ticket(t, i){
   const grupos = t.grupos || [];
   const cuota = t.odds ? `Paga <b>${esc(t.odds)}</b>` : 'Sin cuota leída';
   const etiqueta = t.label ? `<span class="chip">${esc(t.label)}</span>` : '';
@@ -475,19 +492,32 @@ function ticket(t){
     ? `${esc(t.total)} de ${esc(t.declaradas)} tramos leídos`
     : `${esc(t.total)} tramos`;
 
+  const clave = claveTicket(t, i);
+  const colapsado = _colapsoManual.has(clave) ? _colapsoManual.get(clave) : !!t.terminado;
+
   return `
-    <section class="ticket">
-      <div class="ticket__head">
+    <section class="ticket ${colapsado ? 'is-collapsed' : ''}" data-clave="${esc(clave)}">
+      <div class="ticket__head" onclick="toggleTicket(this.closest('.ticket'))">
         <div class="matchup">
           ${etiqueta}<span class="tname">${tramos}</span>
           <span class="tally"><b>${esc(t.done)}</b> de ${esc(t.total)}</span>
         </div>
         <div class="meta">
           ${cuota} · ${esc(grupos.length)} ${grupos.length === 1 ? 'partido' : 'partidos'}
+          ${t.terminado ? '<span class="final">Terminada</span>' : ''}
+          <span class="chevron">⌄</span>
         </div>
       </div>
-      ${grupos.map(grupo).join('')}
+      <div class="ticket__body">
+        ${grupos.map(grupo).join('')}
+      </div>
     </section>`;
+}
+
+function toggleTicket(el){
+  const clave = el.dataset.clave;
+  const colapsado = el.classList.toggle('is-collapsed');
+  _colapsoManual.set(clave, colapsado);
 }
 
 function animar(){

@@ -24,6 +24,7 @@ from app.analysis.probability import (
     _normalize,
     _parse_line,
 )
+from app.mlb.estados import TERMINADO as _TERMINADO
 from app.mlb.live import find_live_game_by_teams, get_live_boxscore, get_live_game
 from app.mlb.pitchers import get_recent_pitching_games
 from app.mlb.players import get_recent_hitting_games, search_player
@@ -204,11 +205,7 @@ def track_leg_live(leg: dict, boxscore: dict, live_state: dict) -> LiveLegStatus
     # significa nada, el jugador puede superar la línea en cualquier
     # momento. Solo se resuelve cuando el partido termina. Marcarlo como
     # cumplido antes sería mentir: mostraría ✅ desde el primer lanzamiento.
-    partido_terminado = str(live_state.get("status") or "").lower() in (
-        "final",
-        "game over",
-        "completed early",
-    )
+    partido_terminado = str(live_state.get("status") or "") in _TERMINADO
     if side == "Over":
         already_hit = current_value > threshold
     else:

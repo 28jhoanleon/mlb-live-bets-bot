@@ -9,10 +9,14 @@ distintos (app/mlb/live.py y app/web/service.py). Los tests anteriores
 mockeaban directamente `get_live_tracking_for_match`, un nivel por
 encima de donde estaba el bug, así que nunca lo iban a encontrar.
 Estos tests mockean solo la capa de red (get_schedule / get_live_game)
-para ejercitar el camino real."""
+para ejercitar el camino real.
+
+Ojo: el primer arreglo de este bug metió una regresión (mezclar
+`get_live_games_today`, la que usa /live, con los estados terminados).
+Por eso hay tests separados para las dos funciones."""
 from unittest.mock import patch
 
-from app.mlb.live import find_live_game_by_teams
+from app.mlb.live import find_live_game_by_teams, get_live_games_today
 
 
 def _schedule(status: str):
@@ -40,6 +44,9 @@ def _live_feed():
 
 
 class TestPartidoTerminadoEncuentraGamePk:
+    """find_live_game_by_teams: la usa el tracking de legs, tiene que
+    encontrar el partido esté en curso o ya haya terminado."""
+
     def test_final_encuentra_game_pk(self):
         with patch("app.mlb.live.get_schedule", return_value=_schedule("Final")), \
              patch("app.mlb.live.get_live_game", return_value=_live_feed()):
@@ -61,3 +68,22 @@ class TestPartidoTerminadoEncuentraGamePk:
         with patch("app.mlb.live.get_schedule", return_value=_schedule("In Progress")), \
              patch("app.mlb.live.get_live_game", return_value=_live_feed()):
             assert find_live_game_by_teams("phillies", "marlins") == 777
+
+
+class TestLiveCommandNoListaTerminados:
+    """get_live_games_today la usa /live: tiene que seguir mostrando
+    SOLO partidos en curso. Mezclarla con los terminados (como pasó en
+    el primer intento de arreglo) haría que /live liste partidos ya
+    terminados como si estuvieran en curso."""
+
+    def test_final_no_aparece_en_live_games_today(self):
+        with patch("app.mlb.live.get_schedule", return_value=_schedule("Final")), \
+             patch("app.mlb.live.get_live_game", return_value=_live_feed()):
+            assert get_live_games_today() == []
+
+    def test_in_progress_si_aparece_en_live_games_today(self):
+        with patch("app.mlb.live.get_schedule", return_value=_schedule("In Progress")), \
+             patch("app.mlb.live.get_live_game", return_value=_live_feed()):
+            juegos = get_live_games_today()
+            assert len(juegos) == 1
+            assert juegos[0]["game_pk"] == 777

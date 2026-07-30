@@ -60,7 +60,26 @@ def _pct(actual: float, objetivo: float, cumplida: bool) -> float:
 def _leg_en_vivo(leg: dict, boxscore: dict, live_state: dict) -> dict[str, Any] | None:
     try:
         status = track_leg_live(leg, boxscore, live_state)
-    except ProbabilityError:
+    except ProbabilityError as e:
+        if "en el boxscore de este partido" in str(e):
+            # El partido SÍ está en vivo y tenemos el roster completo de los
+            # dos equipos, pero este jugador no aparece en ninguno. Casi
+            # siempre es un nombre mal leído por la IA de la captura (un
+            # jugador real, pero de otro equipo) -- no de verdad "no hay
+            # datos". Avisamos en vez de mostrar tranquilamente el
+            # promedio histórico de otra persona.
+            return {
+                "player": leg.get("player") or "Sin jugador",
+                "market": nombre_stake(leg.get("market", "")) or leg.get("market", ""),
+                "line": leg.get("line", ""),
+                "odds": leg.get("odds"),
+                "current": 0,
+                "goal": 0,
+                "pct": 0,
+                "state": "warn",
+                "note": "No lo encuentro en el roster de este partido — revisá el nombre en la captura",
+                "live": True,
+            }
         return None
 
     objetivo = target_needed(status.threshold, status.side)
@@ -214,6 +233,7 @@ def estado_apuestas(chat_id: int) -> dict[str, Any]:
             "done": cumplidas,
             "total": total,
             "live": any(g["live"] for g in grupos),
+            "terminado": bool(grupos) and all(g["terminado"] for g in grupos),
         })
 
     return {"tickets": salida, "count": len(salida)}

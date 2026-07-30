@@ -88,6 +88,32 @@ def estado(tmp_path, monkeypatch):
         return estado_apuestas(999)
 
 
+class TestJugadorNoEnElRoster:
+    """Bug real: 'Luis Rengifo' apareció bajo un partido en vivo cuyo
+    roster no lo incluye (nombre real, pero de otro equipo -- típico de
+    un error de lectura de la IA). Antes eso caía silenciosamente al
+    promedio histórico de ese jugador, mostrándolo como si fuera dato
+    relevante para ESE partido. Ahora debe avisar en vez de disfrazarlo
+    de estadística en vivo."""
+
+    def test_avisa_en_vez_de_mostrar_historico_disfrazado(self):
+        from app.web.service import _leg_en_vivo
+
+        leg = {
+            "match": "Milwaukee Brewers @ San Francisco Giants",
+            "player": "Luis Rengifo",
+            "market": "Hits",
+            "line": "Over 0.5",
+            "odds": None,
+        }
+        resultado = _leg_en_vivo(leg, BOXSCORE, LIVE_STATE)
+
+        assert resultado is not None
+        assert resultado["state"] == "warn"
+        assert resultado["live"] is True
+        assert "roster" in resultado["note"]
+
+
 class TestEstadoParaLaWeb:
     def _t(self, estado):
         return estado["tickets"][0]

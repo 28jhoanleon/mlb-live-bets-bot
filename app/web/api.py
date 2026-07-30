@@ -15,6 +15,7 @@ no quede abierta a cualquiera que la adivine.
 """
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import os
 from pathlib import Path
@@ -68,7 +69,14 @@ async def bets(request: Request) -> JSONResponse:
         )
 
     try:
-        return JSONResponse(estado_apuestas(chat_id))
+        # estado_apuestas hace varias llamadas de red BLOQUEANTES (requests,
+        # no httpx/aiohttp) a la MLB Stats API. Este proceso corre el bot y
+        # la web sobre el mismo event loop: sin to_thread, esas llamadas
+        # congelan TODO -bot incluido- mientras duran. Con varias legs
+        # cayendo al histórico (2 llamadas bloqueantes cada una) esto se
+        # nota como la página tardando mucho o directamente cortándose.
+        resultado = await asyncio.to_thread(estado_apuestas, chat_id)
+        return JSONResponse(resultado)
     except Exception:
         log.exception("Error armando el estado de apuestas para la web")
         return JSONResponse({"detail": "No pude leer las apuestas"}, status_code=500)
@@ -83,7 +91,8 @@ async def leg_detail(request: Request) -> JSONResponse:
     line = request.query_params.get("line", "")
 
     try:
-        return JSONResponse(detalle_leg(player, market, line))
+        resultado = await asyncio.to_thread(detalle_leg, player, market, line)
+        return JSONResponse(resultado)
     except ProbabilityError as e:
         return JSONResponse({"detail": str(e)}, status_code=404)
     except Exception:

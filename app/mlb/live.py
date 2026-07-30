@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.config import settings
-from app.mlb.estados import CON_DATOS
+from app.mlb.estados import CON_DATOS, EN_CURSO
 from app.mlb.http import MLBClientError, get
 from app.mlb.schedule import get_schedule
 from app.utils.logger import get_logger
@@ -123,17 +123,13 @@ def _ip_to_outs(ip: str) -> int:
 
 
 def get_live_games_today() -> list[dict[str, Any]]:
-    """Filtra el schedule de hoy y devuelve los partidos con datos
-    disponibles -EN CURSO o TERMINADOS-, con su estado ya resuelto.
-
-    Antes solo dejaba pasar los "en curso": un partido Final nunca
-    aparecía acá, así que find_live_game_by_teams jamás encontraba su
-    game_pk y la leg terminaba mostrando el promedio histórico en vez
-    del resultado real."""
+    """Filtra el schedule de hoy y devuelve SOLO los partidos en curso
+    ahora mismo, con su estado en vivo ya resuelto. La usa /live, que
+    tiene que mostrar partidos en curso — no terminados."""
     games = get_schedule()
     live_games = []
     for g in games:
-        if g["status"] in CON_DATOS:
+        if g["status"] in EN_CURSO:
             try:
                 live = get_live_game(g["game_pk"])
                 live_games.append({**g, **live})
@@ -142,11 +138,31 @@ def get_live_games_today() -> list[dict[str, Any]]:
     return live_games
 
 
+def _partidos_con_datos_hoy() -> list[dict[str, Any]]:
+    """Como get_live_games_today, pero también incluye los TERMINADOS.
+
+    Es lo que necesita el tracking de legs: un partido Final todavía
+    tiene boxscore con los números definitivos. Separado de
+    get_live_games_today a propósito — mezclar los dos rompió /live,
+    que empezó a listar partidos ya terminados como si estuvieran en
+    curso."""
+    games = get_schedule()
+    con_datos = []
+    for g in games:
+        if g["status"] in CON_DATOS:
+            try:
+                live = get_live_game(g["game_pk"])
+                con_datos.append({**g, **live})
+            except MLBClientError:
+                continue
+    return con_datos
+
+
 def find_live_game_by_teams(away_hint: str, home_hint: str) -> int | None:
     """Busca entre los partidos de hoy uno cuyos equipos matcheen
     (búsqueda difusa por substring) con los nombres detectados en una
-    captura, y devuelve su game_pk si está en vivo."""
-    for g in get_live_games_today():
+    captura, y devuelve su game_pk si tiene datos (en curso o terminado)."""
+    for g in _partidos_con_datos_hoy():
         away = (g.get("away_team") or "").lower()
         home = (g.get("home_team") or "").lower()
         if away_hint.lower() in away or home_hint.lower() in home or home_hint.lower() in away or away_hint.lower() in home:
