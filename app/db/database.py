@@ -80,6 +80,13 @@ def init_db() -> None:
                 creado_en TEXT NOT NULL,
                 resultado TEXT               -- NULL = sin resolver
             );
+
+            CREATE TABLE IF NOT EXISTS ticket_terminado (
+                chat_id TEXT NOT NULL,
+                ticket_id TEXT NOT NULL,
+                terminado_desde TEXT NOT NULL,
+                PRIMARY KEY (chat_id, ticket_id)
+            );
             """
         )
         conn.execute(
@@ -267,4 +274,50 @@ def marcar_resultado_combo(combo_id: int, resultado: str) -> None:
         conn.execute(
             "UPDATE combos_sugeridos SET resultado = ? WHERE id = ?",
             (resultado, combo_id),
+        )
+
+
+# ---------- ticket_terminado (para saber hace cuánto terminó un ticket) ----------
+#
+# La web recalcula "terminado" en cada pedido a partir del estado en vivo
+# de la MLB API — no viene guardado en la apuesta. Para poder aplicar una
+# tolerancia ("mostralo un rato más después de terminar, después sacalo
+# solo") hace falta acordarse de la primera vez que se vio terminado.
+
+def marcar_terminado_si_hace_falta(chat_id: int, ticket_id: str) -> str:
+    """Registra la primera vez que se ve este ticket terminado, y
+    devuelve ese momento (ISO). Si ya estaba registrado, no lo pisa —
+    la tolerancia se cuenta desde la PRIMERA vez que se vio terminado,
+    no desde el último refresco de la página."""
+    ahora = datetime.now(timezone.utc).isoformat()
+    with _connection() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO ticket_terminado (chat_id, ticket_id, terminado_desde) "
+            "VALUES (?, ?, ?)",
+            (str(chat_id), ticket_id, ahora),
+        )
+        row = conn.execute(
+            "SELECT terminado_desde FROM ticket_terminado WHERE chat_id = ? AND ticket_id = ?",
+            (str(chat_id), ticket_id),
+        ).fetchone()
+    return row["terminado_desde"]
+
+
+def olvidar_terminado(chat_id: int, ticket_id: str) -> None:
+    """Por si un ticket que se había marcado terminado deja de estarlo
+    (dato raro de la API, partido revertido, etc.) — no debería pasar
+    en la práctica, pero mejor no dejar basura marcada para siempre."""
+    with _connection() as conn:
+        conn.execute(
+            "DELETE FROM ticket_terminado WHERE chat_id = ? AND ticket_id = ?",
+            (str(chat_id), ticket_id),
+        )
+
+
+def prune_tickets_terminados(older_than_hours: int = 48) -> None:
+    """Limpia registros viejos para no acumular la tabla al infinito."""
+    with _connection() as conn:
+        conn.execute(
+            "DELETE FROM ticket_terminado WHERE terminado_desde < datetime('now', ?)",
+            (f"-{older_than_hours} hours",),
         )

@@ -11,12 +11,14 @@ de mostrarla.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
+import hashlib
 from typing import Any
 
 from app.analysis.live_tracking import get_live_tracking_for_match, track_leg_live
 from app.analysis.probability import ProbabilityError, estimate_leg_detail, estimate_leg_probability
 from app.analysis.tickets import normalize
-from app.db.database import get_active_bet
+from app.db.database import get_active_bet, marcar_terminado_si_hace_falta, olvidar_terminado
 from app.mlb.estados import CON_DATOS as _CON_DATOS
 from app.mlb.estados import TERMINADO as _TERMINADO
 from app.mlb.schedule import buscar_partido
@@ -27,6 +29,11 @@ from app.utils.progress_bar import target_needed
 from app.utils.tiempo import formato_hora_fecha
 
 log = get_logger(__name__)
+
+# Cuánto se muestra un ticket DESPUÉS de que todos sus partidos terminaron
+# antes de sacarlo de la lista por completo. Da tiempo a revisar cómo
+# quedó sin acumular tickets viejos para siempre.
+TOLERANCIA_TICKET_TERMINADO = timedelta(hours=3)
 
 
 def _equipos_de(match: str) -> tuple[str, str]:
@@ -212,6 +219,18 @@ def _armar_grupo(match_text: str, legs_raw: list[dict]) -> dict[str, Any]:
     return grupo
 
 
+def _ticket_id(ticket: dict, legs_raw: list[dict]) -> str:
+    """Id estable de un ticket, a partir de lo que NO cambia con el
+    tiempo (label, cuota total, y qué legs son). El estado en vivo sí
+    cambia en cada refresco, por eso no puede ser parte del id."""
+    piezas = "|".join(sorted(
+        f"{l.get('match', '')}~{l.get('player', '')}~{l.get('market', '')}~{l.get('line', '')}"
+        for l in legs_raw
+    ))
+    crudo = f"{ticket.get('label') or ''}::{ticket.get('total_odds') or ''}::{piezas}"
+    return hashlib.sha1(crudo.encode("utf-8")).hexdigest()[:16]
+
+
 def estado_apuestas(chat_id: int) -> dict[str, Any]:
     """Devuelve las apuestas guardadas, cada una dividida en grupos por
     partido — igual que las muestra la casa de apuestas."""
@@ -240,6 +259,19 @@ def estado_apuestas(chat_id: int) -> dict[str, Any]:
         cumplidas = sum(g["done"] for g in grupos)
         total = sum(g["total"] for g in grupos)
 
+        terminado = bool(grupos) and all(g["terminado"] for g in grupos)
+        ticket_id = _ticket_id(ticket, legs_raw)
+
+        if terminado:
+            desde_iso = marcar_terminado_si_hace_falta(chat_id, ticket_id)
+            desde = datetime.fromisoformat(desde_iso)
+            if desde.tzinfo is None:
+                desde = desde.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) - desde > TOLERANCIA_TICKET_TERMINADO:
+                continue  # ya pasó la tolerancia: se saca de la lista del todo
+        else:
+            olvidar_terminado(chat_id, ticket_id)
+
         salida.append({
             "label": ticket.get("label"),
             "odds": ticket.get("total_odds"),
@@ -248,7 +280,7 @@ def estado_apuestas(chat_id: int) -> dict[str, Any]:
             "done": cumplidas,
             "total": total,
             "live": any(g["live"] for g in grupos),
-            "terminado": bool(grupos) and all(g["terminado"] for g in grupos),
+            "terminado": terminado,
         })
 
     return {"tickets": salida, "count": len(salida)}

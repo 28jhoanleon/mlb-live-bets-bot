@@ -152,6 +152,19 @@ body{
 }
 .ticket.is-collapsed .chevron{transform:rotate(-90deg)}
 .ticket.is-collapsed .ticket__body{display:none}
+
+/* Cuando un ticket tiene varios partidos, cada uno queda indentado y con
+   un borde lateral -señal de que son PIEZAS de una sola apuesta, no
+   combinadas sueltas colgando una al lado de la otra. */
+.ticket__body.multi{
+  margin-left:10px;
+  border-left:2px solid var(--line);
+}
+.ticket__body.multi .group{margin-left:4px}
+.gpart{
+  display:block;color:var(--muted);font-size:10.5px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;
+}
 .tally{
   margin-left:auto;font-family:'Barlow Condensed',sans-serif;
   font-size:15px;font-weight:600;letter-spacing:.03em;color:var(--chalk);
@@ -446,7 +459,7 @@ function equipo(nombre, logo){
 
 // Un grupo = las selecciones de UN partido dentro de la apuesta. Es la
 // misma jerarquía que muestra la casa: apuesta -> partidos -> selecciones.
-function grupo(g){
+function grupo(g, indice, total){
   const marcador = (g.away_score ?? null) !== null
     ? `<span class="gscore">${esc(g.away_score)} – ${esc(g.home_score)}</span>` : '';
 
@@ -457,10 +470,12 @@ function grupo(g){
         : (g.start ? `🕐 ${esc(g.start)}` : ''));
 
   const cuota = g.odds ? `<span class="godds">${esc(g.odds)}</span>` : '';
+  const parte = total > 1 ? `<span class="gpart">Parte ${indice + 1} de ${total}</span>` : '';
 
   return `
     <div class="group">
       <div class="group__head">
+        ${parte}
         <div class="group__teams">
           ${equipo(g.away, g.away_logo)}
           <span class="at">@</span>
@@ -508,8 +523,8 @@ function ticket(t, i){
           <span class="chevron">⌄</span>
         </div>
       </div>
-      <div class="ticket__body">
-        ${grupos.map(grupo).join('')}
+      <div class="ticket__body ${grupos.length > 1 ? 'multi' : ''}">
+        ${grupos.map((g, idx) => grupo(g, idx, grupos.length)).join('')}
       </div>
     </section>`;
 }
