@@ -8,13 +8,15 @@ from typing import Any
 
 from app.mlb.http import get
 from app.utils.logger import get_logger
+from app.utils.tiempo import hoy_local
 
 log = get_logger(__name__)
 
 
 def get_schedule(target_date: date | None = None) -> list[dict[str, Any]]:
-    """Devuelve los partidos del día con pitchers probables incluidos."""
-    target_date = target_date or date.today()
+    """Devuelve los partidos del día (hora de Argentina) con pitchers
+    probables incluidos."""
+    target_date = target_date or hoy_local()
     data = get(
         "/schedule",
         params={
@@ -65,7 +67,7 @@ def get_schedule_cacheado(target_date: date | None = None) -> list[dict[str, Any
     """Igual que get_schedule pero reutiliza el resultado por unos segundos."""
     import time
 
-    clave = (target_date or date.today()).isoformat()
+    clave = (target_date or hoy_local()).isoformat()
     ahora = time.time()
 
     guardado = _CACHE.get(clave)
