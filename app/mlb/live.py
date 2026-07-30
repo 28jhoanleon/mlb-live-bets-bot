@@ -5,7 +5,14 @@ from datetime import date, timedelta
 from typing import Any
 
 from app.config import settings
-from app.mlb.estados import CON_DATOS, DIAS_HACIA_ATRAS, EN_CURSO, mas_cercano_a_ahora
+from app.mlb.estados import (
+    CON_DATOS,
+    DIAS_HACIA_ATRAS,
+    EN_CURSO,
+    mas_cercano_a,
+    mas_cercano_a_ahora,
+    momento_de_la_captura,
+)
 from app.mlb.http import MLBClientError, get
 from app.mlb.schedule import get_schedule
 from app.utils.logger import get_logger
@@ -140,7 +147,9 @@ def get_live_games_today() -> list[dict[str, Any]]:
     return live_games
 
 
-def find_live_game_by_teams(away_hint: str, home_hint: str) -> int | None:
+def find_live_game_by_teams(
+    away_hint: str, home_hint: str, match_datetime: str | None = None
+) -> int | None:
     """Busca el partido de esos equipos más cercano a AHORA y devuelve su
     game_pk sólo si ya tiene datos (en curso o terminado).
 
@@ -168,7 +177,12 @@ def find_live_game_by_teams(away_hint: str, home_hint: str) -> int | None:
         dia = hoy_local() + timedelta(days=offset)
         candidatos.extend(g for g in get_schedule(dia) if _coincide(g))
 
-    elegido = mas_cercano_a_ahora(candidatos)
+    momento = momento_de_la_captura(match_datetime)
+    elegido = (
+        mas_cercano_a(candidatos, momento)
+        if momento is not None
+        else mas_cercano_a_ahora(candidatos)
+    )
     if not elegido or elegido.get("status") not in CON_DATOS:
         return None
     return elegido.get("game_pk")

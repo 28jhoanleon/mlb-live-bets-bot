@@ -102,6 +102,7 @@ Formato:
       "legs": [
         {
           "match": "Equipo A vs Equipo B",
+          "match_datetime": "2026-07-30 13:10",
           "player": "Nombre del jugador o null",
           "market": "Strikeouts",
           "line": "Over 6.5",
@@ -119,6 +120,14 @@ Formato:
 - "odds" dentro de cada leg: la cuota individual, o null si la casa solo
   muestra la cuota total del ticket.
 - "match" dentro de cada leg: el partido al que pertenece ESA selección.
+- "match_datetime": la fecha y hora del partido tal como la muestra la
+  captura ("mié, 29 jul 7:40 p. m." -> "2026-07-29 19:40"), en formato
+  "YYYY-MM-DD HH:MM" de 24 horas. Es IMPORTANTE: los mismos dos equipos
+  suelen jugar varios días seguidos, y sin la fecha no hay forma de
+  saber a qué partido pertenece la selección. Si la captura no muestra
+  fecha ni hora para ese partido, poné null; NO la inventes ni la
+  deduzcas. Si muestra solo la hora sin fecha, asumí que es del día de
+  hoy. El año casi nunca aparece en la captura: usá el año en curso.
 - "legs_declaradas": si la tarjeta dice cuántas selecciones tiene
   ("11 Multi tramo", "Multi apuesta del mismo partido (4)"), poné ese
   número. Sirve para detectar capturas incompletas. null si no figura.

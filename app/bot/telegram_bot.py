@@ -66,10 +66,20 @@ def build_app() -> Application:
             "no van a funcionar hasta instalar la dependencia. Ver requirements.txt."
         )
 
-    log.info(
-        "Handlers registrados: start, help, games, today, live, props, strikeouts, hits, "
-        "hr, analyze, compare, value, refresh, historial, alertas, noalertas, photo"
-    )
+    comandos = sorted({
+        c
+        for h in app.handlers.get(0, [])
+        if isinstance(h, CommandHandler)
+        for c in h.commands
+    })
+    extras = [
+        tipo
+        for tipo, presente in (("photo", any(
+            isinstance(h, MessageHandler) for h in app.handlers.get(0, [])
+        )),)
+        if presente
+    ]
+    log.info("Handlers registrados: %s", ", ".join(comandos + extras))
     return app
 
 

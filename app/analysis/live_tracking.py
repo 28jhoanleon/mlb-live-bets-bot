@@ -61,11 +61,13 @@ def _split_match(match_text: str) -> tuple[str, str]:
     return match_text.strip(), ""
 
 
-def find_live_game_for_leg(match_text: str) -> int | None:
+def find_live_game_for_leg(
+    match_text: str, match_datetime: str | None = None
+) -> int | None:
     away_hint, home_hint = _split_match(match_text)
     if not away_hint:
         return None
-    return find_live_game_by_teams(away_hint, home_hint)
+    return find_live_game_by_teams(away_hint, home_hint, match_datetime)
 
 
 def _remaining_fraction(inning: int | None, inning_state: str | None) -> float:
@@ -280,10 +282,12 @@ def track_leg_live(leg: dict, boxscore: dict, live_state: dict) -> LiveLegStatus
     )
 
 
-def get_live_tracking_for_match(match_text: str) -> tuple[dict, dict] | None:
+def get_live_tracking_for_match(
+    match_text: str, match_datetime: str | None = None
+) -> tuple[dict, dict] | None:
     """Busca el partido en vivo y devuelve (boxscore, live_state), o
     None si el partido no está en curso ahora mismo."""
-    game_pk = find_live_game_for_leg(match_text)
+    game_pk = find_live_game_for_leg(match_text, match_datetime)
     if not game_pk:
         return None
     boxscore = get_live_boxscore(game_pk)

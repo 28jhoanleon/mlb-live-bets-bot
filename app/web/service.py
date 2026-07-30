@@ -135,19 +135,25 @@ def _leg_historica(leg: dict) -> dict[str, Any]:
     }
 
 
-def _datos_del_partido(match_text: str) -> tuple[dict | None, tuple | None]:
-    """Devuelve (entrada del calendario, datos en vivo) para un partido."""
+def _datos_del_partido(
+    match_text: str, match_datetime: str | None = None
+) -> tuple[dict | None, tuple | None]:
+    """Devuelve (entrada del calendario, datos en vivo) para un partido.
+
+    match_datetime es la fecha del partido leída de la captura. Es lo
+    único que distingue dos partidos del MISMO cruce en días seguidos
+    -- sin eso, un ticket de ayer se engancha al partido de hoy."""
     partido = None
     try:
         a, h = _equipos_de(match_text)
-        partido = buscar_partido(a, h)
+        partido = buscar_partido(a, h, match_datetime)
     except Exception:
         log.exception("Error buscando el partido en el calendario")
 
     live_data = None
     if partido and partido.get("status") in _CON_DATOS:
         try:
-            live_data = get_live_tracking_for_match(match_text)
+            live_data = get_live_tracking_for_match(match_text, match_datetime)
         except Exception:
             log.exception("Error trayendo el estado en vivo")
     return partido, live_data
@@ -161,7 +167,12 @@ def _armar_grupo(match_text: str, legs_raw: list[dict]) -> dict[str, Any]:
     juegos, las selecciones de los otros partidos nunca recibían datos en
     vivo y se quedaban mostrando el promedio histórico.
     """
-    partido, live_data = _datos_del_partido(match_text)
+    # Todas las legs de un grupo son del mismo partido: alcanza con la
+    # fecha de la primera que la tenga.
+    match_datetime = next(
+        (l.get("match_datetime") for l in legs_raw if l.get("match_datetime")), None
+    )
+    partido, live_data = _datos_del_partido(match_text, match_datetime)
 
     def _procesar_leg(leg: dict) -> dict[str, Any]:
         resultado = None
@@ -224,7 +235,8 @@ def _ticket_id(ticket: dict, legs_raw: list[dict]) -> str:
     tiempo (label, cuota total, y qué legs son). El estado en vivo sí
     cambia en cada refresco, por eso no puede ser parte del id."""
     piezas = "|".join(sorted(
-        f"{l.get('match', '')}~{l.get('player', '')}~{l.get('market', '')}~{l.get('line', '')}"
+        f"{l.get('match', '')}~{str(l.get('match_datetime') or '')[:10]}~"
+        f"{l.get('player', '')}~{l.get('market', '')}~{l.get('line', '')}"
         for l in legs_raw
     ))
     crudo = f"{ticket.get('label') or ''}::{ticket.get('total_odds') or ''}::{piezas}"
@@ -245,16 +257,20 @@ def estado_apuestas(chat_id: int) -> dict[str, Any]:
             continue
 
         # Agrupamos por partido conservando el orden de aparición
-        por_partido: dict[str, list[dict]] = {}
+        # La clave incluye la FECHA: los mismos dos equipos pueden jugar
+        # dos días seguidos, y ésos son dos partidos distintos, no uno.
+        por_partido: dict[tuple[str, str], list[dict]] = {}
         for leg in legs_raw:
-            clave = (leg.get("match") or ticket.get("match") or "").strip()
-            por_partido.setdefault(clave, []).append(leg)
+            nombre = (leg.get("match") or ticket.get("match") or "").strip()
+            dia = str(leg.get("match_datetime") or "")[:10]
+            por_partido.setdefault((nombre, dia), []).append(leg)
 
-        if len(por_partido) > 1:
-            with ThreadPoolExecutor(max_workers=min(8, len(por_partido))) as ex:
-                grupos = list(ex.map(lambda kv: _armar_grupo(*kv), por_partido.items()))
+        items = [(nombre, ls) for (nombre, _dia), ls in por_partido.items()]
+        if len(items) > 1:
+            with ThreadPoolExecutor(max_workers=min(8, len(items))) as ex:
+                grupos = list(ex.map(lambda kv: _armar_grupo(*kv), items))
         else:
-            grupos = [_armar_grupo(m, ls) for m, ls in por_partido.items()]
+            grupos = [_armar_grupo(m, ls) for m, ls in items]
 
         cumplidas = sum(g["done"] for g in grupos)
         total = sum(g["total"] for g in grupos)

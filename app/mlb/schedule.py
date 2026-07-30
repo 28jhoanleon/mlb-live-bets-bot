@@ -6,7 +6,12 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Any
 
-from app.mlb.estados import DIAS_HACIA_ATRAS, mas_cercano_a_ahora
+from app.mlb.estados import (
+    DIAS_HACIA_ATRAS,
+    mas_cercano_a,
+    mas_cercano_a_ahora,
+    momento_de_la_captura,
+)
 from app.mlb.http import get
 from app.utils.logger import get_logger
 from app.utils.tiempo import hoy_local
@@ -85,7 +90,9 @@ def limpiar_cache() -> None:
     _CACHE.clear()
 
 
-def buscar_partido(away_hint: str, home_hint: str) -> dict[str, Any] | None:
+def buscar_partido(
+    away_hint: str, home_hint: str, match_datetime: str | None = None
+) -> dict[str, Any] | None:
     """Encuentra el partido que coincide con esos equipos.
 
     A diferencia de find_live_game_by_teams, devuelve el partido ESTÉ O NO
@@ -113,4 +120,7 @@ def buscar_partido(away_hint: str, home_hint: str) -> dict[str, Any] | None:
         dia = hoy_local() + timedelta(days=offset)
         candidatos.extend(g for g in get_schedule_cacheado(dia) if _coincide(g))
 
+    momento = momento_de_la_captura(match_datetime)
+    if momento is not None:
+        return mas_cercano_a(candidatos, momento)
     return mas_cercano_a_ahora(candidatos)
