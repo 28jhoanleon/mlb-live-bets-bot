@@ -6,7 +6,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Any
 
-from app.mlb.estados import CON_DATOS, DIAS_HACIA_ATRAS
+from app.mlb.estados import DIAS_HACIA_ATRAS, mas_cercano_a_ahora
 from app.mlb.http import get
 from app.utils.logger import get_logger
 from app.utils.tiempo import hoy_local
@@ -92,6 +92,11 @@ def buscar_partido(away_hint: str, home_hint: str) -> dict[str, Any] | None:
     en vivo. Hace falta para saber el horario y para detectar el momento en
     que arranca: si solo miráramos los que ya están en curso, una apuesta
     cargada antes del primer lanzamiento nunca pasaría a modo en vivo.
+
+    Si los mismos dos equipos juegan una serie de varios días, puede
+    haber más de un partido que matchee por nombre -- se junta candidatos
+    de varios días (atrás y adelante) y se elige el de fecha/hora más
+    cercana a AHORA, no cualquiera que tenga datos.
     """
     if not away_hint:
         return None
@@ -103,23 +108,9 @@ def buscar_partido(away_hint: str, home_hint: str) -> dict[str, Any] | None:
         home = (g.get("home_team") or "").lower()
         return a in away or (h and h in home) or (h and h in away) or a in home
 
-    # Un partido nocturno (23:10, por ejemplo) puede seguir en curso o
-    # recién haber terminado pasada la medianoche en Argentina -momento
-    # en que hoy_local() ya pasó al día siguiente y ese partido
-    # desaparece de "la cartelera de hoy". Y si el usuario recién vuelve
-    # a mirar el ticket más tarde, puede haber pasado más de un día
-    # entero. Por eso miramos varios días hacia atrás, del más reciente
-    # al más viejo, pero solo nos quedamos con una entrada de un día
-    # anterior si de verdad tiene datos (en curso o terminado): si no,
-    # puede haber un partido FUTURO entre los mismos equipos hoy (series
-    # de varios días) y ese es el que corresponde mostrar.
-    for dias_atras in range(1, DIAS_HACIA_ATRAS + 1):
-        dia = hoy_local() - timedelta(days=dias_atras)
-        for g in get_schedule_cacheado(dia):
-            if _coincide(g) and g.get("status") in CON_DATOS:
-                return g
+    candidatos: list[dict[str, Any]] = []
+    for offset in range(-DIAS_HACIA_ATRAS, 2):  # de N días atrás hasta mañana
+        dia = hoy_local() + timedelta(days=offset)
+        candidatos.extend(g for g in get_schedule_cacheado(dia) if _coincide(g))
 
-    for g in get_schedule_cacheado():
-        if _coincide(g):
-            return g
-    return None
+    return mas_cercano_a_ahora(candidatos)

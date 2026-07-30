@@ -10,7 +10,7 @@ directamente no encontrar nada).
 Lo llamativo: ya existía `hoy_local()` en app/utils/tiempo.py, con un
 docstring que describe este bug exacto -- pero nunca se conectó a
 get_schedule(), así que quedó ahí sin usarse."""
-from datetime import date
+from datetime import date, datetime
 from unittest.mock import patch
 
 from app.mlb import schedule
@@ -80,39 +80,60 @@ class TestBuscarPartidoVariosDiasAtras:
 
 
 class TestBuscarPartidoNocturno:
-    """Bug real: Dodgers @ Mariners arrancó 23:10 hora Argentina y siguió
-    en curso pasada la medianoche. Para ese momento hoy_local() ya
-    apuntaba al día siguiente, así que buscar_partido() dejó de ver ese
-    partido en 'la cartelera de hoy' -y como esos mismos equipos también
-    tenían otro partido programado para el día siguiente (serie de
-    varios juegos), terminó devolviendo ESE, todavía sin arrancar. La web
-    mostraba el reloj de 'programado' para un partido que en la vida real
-    ya había terminado 4-2."""
+    """Bug real #1: Dodgers @ Mariners arrancó 23:10 hora Argentina y
+    siguió en curso pasada la medianoche. Para ese momento hoy_local()
+    ya apuntaba al día siguiente, así que buscar_partido() dejó de ver
+    ese partido en 'la cartelera de hoy'.
 
-    def _schedule(self, dia: str, extra: dict) -> list[dict]:
+    Bug real #2 (la vuelta siguiente, y el más importante): al arreglar
+    el #1 prefiriendo ciegamente "cualquiera con datos", una serie de
+    varios días entre los mismos dos equipos rompió al revés: un ticket
+    sobre el partido de MAÑANA (todavía sin arrancar) terminó mostrando
+    el resultado de un partido YA JUGADO entre esos mismos equipos, de
+    otro día de la misma serie. La solución final: elegir el candidato
+    de fecha/hora más cercana a AHORA, sea pasado o futuro -no
+    "cualquiera con datos" ni "siempre el de más adelante"."""
+
+    def _schedule(self, game_time_utc: str, extra: dict) -> list[dict]:
         base = {
             "away_team": "Los Angeles Dodgers", "home_team": "Seattle Mariners",
-            "venue": "T-Mobile Park", "game_time_utc": f"{dia}T02:10:00Z",
+            "venue": "T-Mobile Park", "game_time_utc": game_time_utc,
         }
         return [{**base, **extra}]
 
+    def _ahora(self, iso: str):
+        return patch(
+            "app.mlb.estados.datetime",
+            **{
+                "now.return_value": datetime.fromisoformat(iso),
+                "fromisoformat.side_effect": datetime.fromisoformat,
+            },
+        )
+
     def test_prioriza_el_partido_de_ayer_si_sigue_vivo_o_termino(self):
-        ayer_pk = 111
-        hoy_pk = 222
+        """Son las 00:30 en Argentina (02:30 UTC), recién pasada la
+        medianoche: el partido de ayer, que arrancó 23:10 ART (02:10 UTC,
+        ya del día siguiente) y todavía sigue en curso, tiene que
+        ganarle al próximo de la serie, programado para bastante más
+        tarde."""
+        ayer_pk, hoy_pk = 111, 222
         with patch.object(schedule, "hoy_local", return_value=date(2026, 7, 30)), \
-             patch.object(schedule, "get_schedule_cacheado") as sched_mock:
+             patch.object(schedule, "get_schedule_cacheado") as sched_mock, \
+             self._ahora("2026-07-30T02:30:00+00:00"):
             def _fake(target_date=None):
                 if target_date == date(2026, 7, 29):
-                    return self._schedule("2026-07-29", {"game_pk": ayer_pk, "status": "Final"})
-                return self._schedule("2026-07-30", {"game_pk": hoy_pk, "status": "Scheduled"})
+                    # Se consulta como "29" (la fecha de calendario en
+                    # que arrancó en Argentina) pero en UTC ya cae 30.
+                    return self._schedule("2026-07-30T02:10:00Z", {"game_pk": ayer_pk, "status": "Final"})
+                return self._schedule("2026-07-30T23:10:00Z", {"game_pk": hoy_pk, "status": "Scheduled"})
 
             sched_mock.side_effect = _fake
             partido = schedule.buscar_partido("los angeles dodgers", "seattle mariners")
 
         assert partido is not None
         assert partido["game_pk"] == ayer_pk, (
-            "devolvió el partido de HOY (todavía sin arrancar) en vez del "
-            "de ayer, que siguió en curso pasada la medianoche"
+            "devolvió el próximo partido de la serie (todavía sin arrancar) "
+            "en vez del de ayer, que siguió en curso pasada la medianoche"
         )
 
     def test_si_ayer_no_tiene_datos_cae_a_hoy(self):
@@ -120,14 +141,46 @@ class TestBuscarPartidoNocturno:
         la cartelera de hoy."""
         hoy_pk = 222
         with patch.object(schedule, "hoy_local", return_value=date(2026, 7, 30)), \
-             patch.object(schedule, "get_schedule_cacheado") as sched_mock:
+             patch.object(schedule, "get_schedule_cacheado") as sched_mock, \
+             self._ahora("2026-07-30T01:50:00+00:00"):
             def _fake(target_date=None):
                 if target_date == date(2026, 7, 29):
                     return []  # nada ayer
-                return self._schedule("2026-07-30", {"game_pk": hoy_pk, "status": "Scheduled"})
+                return self._schedule("2026-07-30T02:10:00Z", {"game_pk": hoy_pk, "status": "Scheduled"})
 
             sched_mock.side_effect = _fake
             partido = schedule.buscar_partido("los angeles dodgers", "seattle mariners")
 
         assert partido is not None
         assert partido["game_pk"] == hoy_pk
+
+    def test_serie_de_varios_dias_elige_el_partido_correcto_no_cualquiera_con_datos(self):
+        """El bug real reportado: Rangers @ Rays (y otros) jugaban una
+        serie de varios días. El ticket era sobre el partido de MAÑANA
+        (todavía sin arrancar), pero al preferir ciegamente cualquier
+        partido 'con datos', devolvía el de HACE DOS DÍAS -ya terminado
+        Final- entre esos mismos dos equipos. El de mañana tiene que
+        ganar porque está más cerca de AHORA."""
+        viejo_pk, correcto_pk = 111, 333
+        with patch.object(schedule, "hoy_local", return_value=date(2026, 7, 29)), \
+             patch.object(schedule, "get_schedule_cacheado") as sched_mock, \
+             self._ahora("2026-07-29T22:00:00+00:00"):  # noche del 29, el de mañana es a la tarde
+            def _fake(target_date=None):
+                if target_date == date(2026, 7, 27):  # hace 2 dias: ya jugado
+                    return self._schedule("2026-07-27", {"game_pk": viejo_pk, "status": "Final"})
+                if target_date == date(2026, 7, 30):  # mañana: el que corresponde
+                    return [{
+                        "away_team": "Texas Rangers", "home_team": "Tampa Bay Rays",
+                        "venue": "Tropicana Field", "game_time_utc": "2026-07-30T17:10:00Z",
+                        "game_pk": correcto_pk, "status": "Scheduled",
+                    }]
+                return []
+
+            sched_mock.side_effect = _fake
+            partido = schedule.buscar_partido("texas rangers", "tampa bay rays")
+
+        assert partido is not None
+        assert partido["game_pk"] == correcto_pk, (
+            f"devolvió un partido YA JUGADO de hace 2 días ({partido}) en vez "
+            f"del de mañana, que es el que corresponde a este ticket"
+        )

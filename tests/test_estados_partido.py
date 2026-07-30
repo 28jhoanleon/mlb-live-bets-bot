@@ -70,11 +70,8 @@ class TestPartidoTerminadoEncuentraGamePk:
             assert find_live_game_by_teams("phillies", "marlins") == 777
 
     def test_encuentra_partido_de_dos_dias_atras(self):
-        """Bug real reportado: un ticket ya 'determinado' en la casa de
-        apuestas (resuelto hace más de un día) seguía sin encontrar el
-        partido -- 'ayer' nada más no alcanzaba. Sin encontrarlo, nunca
-        se podía marcar terminado, y sin eso tampoco se disparaba el
-        auto-borrado."""
+        """Un ticket resuelto hace más de un día tiene que seguir
+        encontrando su partido: 'ayer' nada más no alcanzaba."""
         from datetime import date
 
         def _schedule_por_dia(target_date=None):
@@ -86,6 +83,79 @@ class TestPartidoTerminadoEncuentraGamePk:
              patch("app.mlb.live.get_schedule", side_effect=_schedule_por_dia), \
              patch("app.mlb.live.get_live_game", return_value=_live_feed()):
             assert find_live_game_by_teams("phillies", "marlins") == 777
+
+    def test_partido_de_hoy_sin_arrancar_le_gana_al_final_de_ayer(self):
+        """EL bug real reportado, y el que ningún test agarraba: Stake
+        mostraba Rangers @ Rays arrancando en 59 minutos, y la web lo
+        mostraba FINAL 0-3 con las legs ya resueltas -- los datos del
+        MISMO cruce jugado AYER.
+
+        La causa era el ORDEN: se filtraba por "tiene datos" ANTES de
+        elegir el más cercano a ahora. El partido de hoy, todavía
+        'Scheduled', quedaba fuera del pool de candidatos, así que el
+        Final de ayer ganaba por no tener con quién competir.
+
+        Lo correcto: elegir primero el partido más cercano sobre TODO el
+        calendario y recién después mirar si tiene datos. Si el más
+        cercano no arrancó, no hay datos en vivo -> None -> histórico."""
+        from datetime import date
+
+        hoy_sin_arrancar = {
+            "game_pk": 222, "status": "Scheduled",
+            "away_team": "Texas Rangers", "home_team": "Tampa Bay Rays",
+            "game_time_utc": "2026-07-30T17:10:00Z",  # arranca en un rato
+        }
+        ayer_terminado = {
+            "game_pk": 111, "status": "Final",
+            "away_team": "Texas Rangers", "home_team": "Tampa Bay Rays",
+            "game_time_utc": "2026-07-29T17:10:00Z",  # el de ayer
+        }
+
+        def _schedule_por_dia(target_date=None):
+            if target_date == date(2026, 7, 30):
+                return [hoy_sin_arrancar]
+            if target_date == date(2026, 7, 29):
+                return [ayer_terminado]
+            return []
+
+        with patch("app.mlb.live.hoy_local", return_value=date(2026, 7, 30)), \
+             patch("app.mlb.live.get_schedule", side_effect=_schedule_por_dia), \
+             patch("app.mlb.live.get_live_game", return_value=_live_feed()):
+            resultado = find_live_game_by_teams("texas rangers", "tampa bay rays")
+
+        assert resultado != 111, (
+            "devolvió el game_pk del partido de AYER (ya Final) para un "
+            "partido de hoy que todavía no arrancó -- la web va a mostrar "
+            "el resultado de ayer como si fuera el de hoy"
+        )
+        assert resultado is None, (
+            "el partido de hoy todavía no arrancó: no hay datos en vivo, "
+            "tiene que caer al histórico"
+        )
+
+    def test_serie_de_varios_dias_elige_el_final_mas_reciente(self):
+        """Si los mismos dos equipos jugaron Final hace 3 días Y hace 1
+        día (serie), tiene que quedarse con el más cercano a ahora, no
+        con cualquiera."""
+        from datetime import date, datetime, timezone
+        from unittest.mock import patch as _patch
+
+        def _schedule_por_dia(target_date=None):
+            if target_date == date(2026, 7, 27):  # hace 3 dias
+                return [{**_schedule("Final")[0], "game_pk": 111,
+                          "game_time_utc": "2026-07-27T17:10:00Z"}]
+            if target_date == date(2026, 7, 29):  # ayer
+                return [{**_schedule("Final")[0], "game_pk": 999,
+                          "game_time_utc": "2026-07-29T17:10:00Z"}]
+            return []
+
+        with patch("app.mlb.live.hoy_local", return_value=date(2026, 7, 30)), \
+             patch("app.mlb.live.get_schedule", side_effect=_schedule_por_dia), \
+             patch("app.mlb.live.get_live_game", return_value=_live_feed()), \
+             _patch("app.mlb.estados.datetime") as dt_mock:
+            dt_mock.now.return_value = datetime.fromisoformat("2026-07-29T20:00:00+00:00")
+            dt_mock.fromisoformat.side_effect = datetime.fromisoformat
+            assert find_live_game_by_teams("phillies", "marlins") == 999
 
 
 class TestLiveCommandNoListaTerminados:
