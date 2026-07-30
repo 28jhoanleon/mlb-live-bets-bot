@@ -64,8 +64,8 @@ def nombre_stake(market_key: str) -> str:
     return market_key
 
 
-def format_value_bet_key(key: str) -> str:
-    """Convierte 'batter_hits|Aaron Judge|Over|0.5' en texto legible."""
-    market_key, player, side, point = key.split("|")
+def format_value_bet_key(key: str, side: str) -> str:
+    """Convierte 'batter_hits|Aaron Judge|0.5' + 'Over' en texto legible."""
+    market_key, player, point = key.split("|")
     point_str = f" {point}" if point != "None" else ""
     return f"{market_label(market_key)} — {escape_md(player)}: {escape_md(side)}{point_str}"

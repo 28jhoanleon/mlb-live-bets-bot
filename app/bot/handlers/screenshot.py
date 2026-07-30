@@ -172,12 +172,6 @@ def _live_header(live_state: dict, is_parlay: bool) -> list[str]:
     return lineas
 
 
-def _static_header(legs: list[dict], is_parlay: bool) -> list[str]:
-    tipo = "🧩 *Combinada*" if is_parlay else "🎯 *Apuesta*"
-    partido = escape_md(legs[0].get("match", "")) if legs else ""
-    return [tipo, partido] if partido else [tipo]
-
-
 async def _estimate_leg_historical(leg: dict) -> tuple[LegEstimate | None, str | None]:
     player = leg.get("player")
     if not player:

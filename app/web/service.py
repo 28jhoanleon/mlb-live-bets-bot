@@ -10,6 +10,7 @@ de mostrarla.
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from app.analysis.live_tracking import get_live_tracking_for_match, track_leg_live
@@ -155,13 +156,23 @@ def _armar_grupo(match_text: str, legs_raw: list[dict]) -> dict[str, Any]:
     """
     partido, live_data = _datos_del_partido(match_text)
 
-    legs: list[dict[str, Any]] = []
-    for leg in legs_raw:
+    def _procesar_leg(leg: dict) -> dict[str, Any]:
         resultado = None
         if live_data:
             boxscore, live_state = live_data
             resultado = _leg_en_vivo(leg, boxscore, live_state)
-        legs.append(resultado or _leg_historica(leg))
+        return resultado or _leg_historica(leg)
+
+    # Las legs en vivo no pegan a la red (ya tenemos boxscore/live_state
+    # del grupo). Las que caen al histórico sí -2 llamadas cada una-, y
+    # antes se hacían una por una: una combinada con varias legs sin
+    # partido arrancado tardaba la suma de todas. En paralelo tarda lo
+    # que tarda la más lenta.
+    if len(legs_raw) > 1:
+        with ThreadPoolExecutor(max_workers=min(8, len(legs_raw))) as ex:
+            legs = list(ex.map(_procesar_leg, legs_raw))
+    else:
+        legs = [_procesar_leg(leg) for leg in legs_raw]
 
     if partido:
         away_nombre = partido.get("away_team")
@@ -220,7 +231,11 @@ def estado_apuestas(chat_id: int) -> dict[str, Any]:
             clave = (leg.get("match") or ticket.get("match") or "").strip()
             por_partido.setdefault(clave, []).append(leg)
 
-        grupos = [_armar_grupo(m, ls) for m, ls in por_partido.items()]
+        if len(por_partido) > 1:
+            with ThreadPoolExecutor(max_workers=min(8, len(por_partido))) as ex:
+                grupos = list(ex.map(lambda kv: _armar_grupo(*kv), por_partido.items()))
+        else:
+            grupos = [_armar_grupo(m, ls) for m, ls in por_partido.items()]
 
         cumplidas = sum(g["done"] for g in grupos)
         total = sum(g["total"] for g in grupos)

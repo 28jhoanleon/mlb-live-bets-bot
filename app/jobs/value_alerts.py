@@ -27,7 +27,7 @@ _MIN_EDGE_FOR_ALERT = 5.0  # más exigente que el /value manual (3%), para no sa
 def _alert_key(event: dict, outcome_key: str, bet) -> str:
     """Clave de dedup: mismo evento + mismo pick + misma casa + misma
     cuota redondeada. Si la cuota cambia, se considera una alerta nueva."""
-    return f"{event.get('id', event.get('away_team'))}|{outcome_key}|{bet.book}|{round(bet.price, 2)}"
+    return f"{event.get('id', event.get('away_team'))}|{outcome_key}|{bet.side}|{bet.book}|{round(bet.price, 2)}"
 
 
 async def check_value_alerts_job(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -50,7 +50,7 @@ async def check_value_alerts_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         text = (
             f"🚨 *Value Bet detectada*\n\n"
             f"*{event.get('away_team')} @ {event.get('home_team')}*\n"
-            f"{format_value_bet_key(key)}\n"
+            f"{format_value_bet_key(key, bet.side)}\n"
             f"💰 {bet.book} @ {bet.price}\n"
             f"📈 Prob. estimada: {bet.fair_probability}% | Implícita: {bet.implied_probability}%\n"
             f"✅ Valor: +{bet.edge_pct}%"
