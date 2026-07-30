@@ -3,9 +3,10 @@ Separado de live.py porque son datos que se piden con distinta frecuencia
 (schedule cambia una vez al día, live cambia cada pocos segundos)."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
+from app.mlb.estados import CON_DATOS, DIAS_HACIA_ATRAS
 from app.mlb.http import get
 from app.utils.logger import get_logger
 from app.utils.tiempo import hoy_local
@@ -85,7 +86,7 @@ def limpiar_cache() -> None:
 
 
 def buscar_partido(away_hint: str, home_hint: str) -> dict[str, Any] | None:
-    """Encuentra el partido de hoy que coincide con esos equipos.
+    """Encuentra el partido que coincide con esos equipos.
 
     A diferencia de find_live_game_by_teams, devuelve el partido ESTÉ O NO
     en vivo. Hace falta para saber el horario y para detectar el momento en
@@ -97,9 +98,28 @@ def buscar_partido(away_hint: str, home_hint: str) -> dict[str, Any] | None:
     a = away_hint.lower()
     h = (home_hint or "").lower()
 
-    for g in get_schedule_cacheado():
+    def _coincide(g: dict[str, Any]) -> bool:
         away = (g.get("away_team") or "").lower()
         home = (g.get("home_team") or "").lower()
-        if a in away or (h and h in home) or (h and h in away) or a in home:
+        return a in away or (h and h in home) or (h and h in away) or a in home
+
+    # Un partido nocturno (23:10, por ejemplo) puede seguir en curso o
+    # recién haber terminado pasada la medianoche en Argentina -momento
+    # en que hoy_local() ya pasó al día siguiente y ese partido
+    # desaparece de "la cartelera de hoy". Y si el usuario recién vuelve
+    # a mirar el ticket más tarde, puede haber pasado más de un día
+    # entero. Por eso miramos varios días hacia atrás, del más reciente
+    # al más viejo, pero solo nos quedamos con una entrada de un día
+    # anterior si de verdad tiene datos (en curso o terminado): si no,
+    # puede haber un partido FUTURO entre los mismos equipos hoy (series
+    # de varios días) y ese es el que corresponde mostrar.
+    for dias_atras in range(1, DIAS_HACIA_ATRAS + 1):
+        dia = hoy_local() - timedelta(days=dias_atras)
+        for g in get_schedule_cacheado(dia):
+            if _coincide(g) and g.get("status") in CON_DATOS:
+                return g
+
+    for g in get_schedule_cacheado():
+        if _coincide(g):
             return g
     return None

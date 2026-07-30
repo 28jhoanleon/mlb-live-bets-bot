@@ -69,6 +69,24 @@ class TestPartidoTerminadoEncuentraGamePk:
              patch("app.mlb.live.get_live_game", return_value=_live_feed()):
             assert find_live_game_by_teams("phillies", "marlins") == 777
 
+    def test_encuentra_partido_de_dos_dias_atras(self):
+        """Bug real reportado: un ticket ya 'determinado' en la casa de
+        apuestas (resuelto hace más de un día) seguía sin encontrar el
+        partido -- 'ayer' nada más no alcanzaba. Sin encontrarlo, nunca
+        se podía marcar terminado, y sin eso tampoco se disparaba el
+        auto-borrado."""
+        from datetime import date
+
+        def _schedule_por_dia(target_date=None):
+            if target_date == date(2026, 7, 28):  # hace 2 días
+                return _schedule("Final")
+            return []  # hoy y ayer, nada
+
+        with patch("app.mlb.live.hoy_local", return_value=date(2026, 7, 30)), \
+             patch("app.mlb.live.get_schedule", side_effect=_schedule_por_dia), \
+             patch("app.mlb.live.get_live_game", return_value=_live_feed()):
+            assert find_live_game_by_teams("phillies", "marlins") == 777
+
 
 class TestLiveCommandNoListaTerminados:
     """get_live_games_today la usa /live: tiene que seguir mostrando

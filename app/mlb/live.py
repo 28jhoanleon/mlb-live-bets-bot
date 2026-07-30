@@ -1,13 +1,15 @@
 """Estado en vivo de partidos: inning, outs, score, corredores en base."""
 from __future__ import annotations
 
+from datetime import date, timedelta
 from typing import Any
 
 from app.config import settings
-from app.mlb.estados import CON_DATOS, EN_CURSO
+from app.mlb.estados import CON_DATOS, DIAS_HACIA_ATRAS, EN_CURSO
 from app.mlb.http import MLBClientError, get
 from app.mlb.schedule import get_schedule
 from app.utils.logger import get_logger
+from app.utils.tiempo import hoy_local
 
 log = get_logger(__name__)
 
@@ -138,15 +140,12 @@ def get_live_games_today() -> list[dict[str, Any]]:
     return live_games
 
 
-def _partidos_con_datos_hoy() -> list[dict[str, Any]]:
-    """Como get_live_games_today, pero también incluye los TERMINADOS.
-
-    Es lo que necesita el tracking de legs: un partido Final todavía
-    tiene boxscore con los números definitivos. Separado de
-    get_live_games_today a propósito — mezclar los dos rompió /live,
-    que empezó a listar partidos ya terminados como si estuvieran en
-    curso."""
-    games = get_schedule()
+def _partidos_con_datos(target_date: date | None = None) -> list[dict[str, Any]]:
+    """Como get_live_games_today, pero también incluye los TERMINADOS, y
+    para cualquier fecha (no solo hoy). Separado de get_live_games_today
+    a propósito — mezclar los dos rompió /live, que empezó a listar
+    partidos ya terminados como si estuvieran en curso."""
+    games = get_schedule(target_date)
     con_datos = []
     for g in games:
         if g["status"] in CON_DATOS:
@@ -158,13 +157,34 @@ def _partidos_con_datos_hoy() -> list[dict[str, Any]]:
     return con_datos
 
 
+def _partidos_con_datos_hoy() -> list[dict[str, Any]]:
+    return _partidos_con_datos()
+
+
 def find_live_game_by_teams(away_hint: str, home_hint: str) -> int | None:
-    """Busca entre los partidos de hoy uno cuyos equipos matcheen
+    """Busca entre los partidos con datos uno cuyos equipos matcheen
     (búsqueda difusa por substring) con los nombres detectados en una
-    captura, y devuelve su game_pk si tiene datos (en curso o terminado)."""
-    for g in _partidos_con_datos_hoy():
+    captura, y devuelve su game_pk si tiene datos (en curso o terminado).
+
+    Mira varios días hacia atrás: un partido nocturno (23:10 hora
+    Argentina, por ejemplo) puede seguir en curso o recién haber
+    terminado pasada la medianoche, momento en que "la cartelera de
+    hoy" ya no lo incluye. Y si el usuario recién vuelve a mirar el
+    ticket más tarde, puede haber pasado más de un día entero."""
+
+    def _coincide(g: dict[str, Any]) -> bool:
         away = (g.get("away_team") or "").lower()
         home = (g.get("home_team") or "").lower()
-        if away_hint.lower() in away or home_hint.lower() in home or home_hint.lower() in away or away_hint.lower() in home:
+        ah, hh = away_hint.lower(), home_hint.lower()
+        return ah in away or hh in home or hh in away or ah in home
+
+    for dias_atras in range(1, DIAS_HACIA_ATRAS + 1):
+        dia = hoy_local() - timedelta(days=dias_atras)
+        for g in _partidos_con_datos(dia):
+            if _coincide(g):
+                return g.get("game_pk")
+
+    for g in _partidos_con_datos_hoy():
+        if _coincide(g):
             return g.get("game_pk")
     return None

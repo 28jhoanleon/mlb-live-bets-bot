@@ -14,3 +14,11 @@ from __future__ import annotations
 EN_CURSO = ("In Progress", "Manager challenge", "Warmup", "Delayed")
 TERMINADO = ("Final", "Game Over", "Completed Early")
 CON_DATOS = EN_CURSO + TERMINADO
+
+# Cuántos días hacia atrás buscar un partido con datos (en curso o
+# terminado) antes de darlo por no encontrado. Con 1 solo día alcanzaba
+# para el caso de partido nocturno que cruza la medianoche, pero no para
+# un ticket que el usuario recién vuelve a mirar más tarde: si ya pasó
+# más de un día, antes no lo encontraba NUNCA -y al no encontrarlo,
+# tampoco se podía marcar terminado para que el auto-borrado lo sacara.
+DIAS_HACIA_ATRAS = 3
