@@ -91,6 +91,10 @@ def _leg_en_vivo(leg: dict, boxscore: dict, live_state: dict) -> dict[str, Any] 
         return None
 
     objetivo = target_needed(status.threshold, status.side)
+    estado = _estado_leg(status)
+    # En una leg ya cumplida, el tilde verde y la barra llena ya dicen
+    # todo: repetirlo con "ASEGURADA — ya no puede revertirse" es ruido.
+    nota = "" if estado == "done" else status.status_text
     return {
         "player": status.player,
         "market": nombre_stake(leg.get("market", "")) or leg.get("market", ""),
@@ -99,8 +103,8 @@ def _leg_en_vivo(leg: dict, boxscore: dict, live_state: dict) -> dict[str, Any] 
         "current": status.current_value,
         "goal": objetivo,
         "pct": _pct(status.current_value, objetivo, status.already_hit),
-        "state": _estado_leg(status),
-        "note": status.status_text,
+        "state": estado,
+        "note": nota,
         "player_status": status.active_status,
         "live": True,
     }

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 
 from app.analysis.probability import (
     ProbabilityError,
@@ -184,6 +185,26 @@ def track_leg_live(leg: dict, boxscore: dict, live_state: dict) -> LiveLegStatus
                 player_stats = stats
                 resolved_name = name
                 break
+
+        if not player_stats:
+            # La IA a veces se come o cambia UNA letra al leer la captura
+            # ("Meldroth" con L en vez de "Meidroth" con i). Comparación
+            # aproximada como último recurso, con un umbral alto: el
+            # roster de un partido son ~26 nombres bien distintos entre
+            # sí, así que un parecido de 0.88+ es un error de tipeo, no
+            # otro jugador. Por debajo de eso preferimos avisar antes que
+            # arriesgarnos a mostrar las estadísticas de otra persona.
+            mejor, mejor_ratio = None, 0.0
+            for name, stats in boxscore.items():
+                ratio = SequenceMatcher(None, buscado, _normalize(name)).ratio()
+                if ratio > mejor_ratio:
+                    mejor, mejor_ratio = (name, stats), ratio
+            if mejor and mejor_ratio >= 0.88:
+                resolved_name, player_stats = mejor
+                log.info(
+                    "Nombre aproximado: '%s' -> '%s' (parecido %.2f)",
+                    player_name, resolved_name, mejor_ratio,
+                )
 
     if not player_stats:
         raise ProbabilityError(f"No encontré a {leg.get('player')} en el boxscore de este partido.")
