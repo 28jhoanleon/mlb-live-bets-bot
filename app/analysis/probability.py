@@ -36,6 +36,7 @@ class LegEstimate:
     sample_size: int
     avg_value: float
     is_pitcher: bool
+    sugerencia: str | None = None  # otra línea del mismo mercado que rinde más
 
 
 def _normalize(text: str) -> str:
@@ -180,6 +181,56 @@ def _cargar_jugador_y_partidos(
     return player, side, threshold, is_pitcher, stat_fields, games
 
 
+# Piso de probabilidad para sugerir otra línea. Por debajo de esto ya no
+# es "una apuesta mejor", es otra apuesta más arriesgada.
+_PISO_SUGERENCIA = 70.0
+
+
+def _sugerir_linea(
+    valores: list[float], side: str, threshold: float, probabilidad_actual: float
+) -> str | None:
+    """Busca si había una línea MÁS EXIGENTE del mismo mercado que igual
+    entraba seguido.
+
+    Ejemplo real: alguien apostó "Hits Allowed Over 3.5" y el pitcher
+    promedia 6.3 -- pegó 90% de las veces, pero pagaba poco justamente
+    porque era fácil. Si "Over 5.5" también entraba el 80% de las veces,
+    esa era la apuesta: misma confianza, mucha mejor cuota.
+
+    Solo sugiere si la línea alternativa sigue por encima de
+    _PISO_SUGERENCIA; si no, estaríamos empujando a arriesgar más sin
+    respaldo. Devuelve None cuando la línea elegida ya era la correcta.
+    """
+    if not valores or probabilidad_actual < _PISO_SUGERENCIA:
+        # Si la apuesta original ya es floja, sugerir algo MÁS exigente
+        # sería empeorarla.
+        return None
+
+    # Candidatas: líneas .5 entre la actual y el máximo observado.
+    piso, techo = int(min(valores)), int(max(valores))
+    if side == "Over":
+        candidatas = [x + 0.5 for x in range(int(threshold), techo + 1)]
+        candidatas = [c for c in candidatas if c > threshold]
+    else:
+        candidatas = [x + 0.5 for x in range(piso, int(threshold) + 1)]
+        candidatas = [c for c in candidatas if c < threshold]
+
+    mejor = None
+    for c in candidatas:
+        aciertos = (
+            sum(1 for v in valores if v > c) if side == "Over"
+            else sum(1 for v in valores if v < c)
+        )
+        pct = aciertos / len(valores) * 100
+        if pct >= _PISO_SUGERENCIA:
+            mejor = (c, round(pct, 1))
+
+    if not mejor:
+        return None
+    linea, pct = mejor
+    return f"{side} {linea:g} también entraba en {pct:g}%"
+
+
 def estimate_leg_probability(player_name: str, market_text: str, line_text: str) -> LegEstimate:
     player, side, threshold, is_pitcher, stat_fields, games = _cargar_jugador_y_partidos(
         player_name, market_text, line_text
@@ -203,6 +254,7 @@ def estimate_leg_probability(player_name: str, market_text: str, line_text: str)
         sample_size=len(values),
         avg_value=avg_value,
         is_pitcher=is_pitcher,
+        sugerencia=_sugerir_linea(values, side, threshold, probability_pct),
     )
 
 
@@ -253,3 +305,90 @@ def estimate_leg_detail(player_name: str, market_text: str, line_text: str) -> L
         is_pitcher=is_pitcher,
         games=entries,
     )
+
+
+@dataclass
+class Sugerencia:
+    """Una línea alternativa para el MISMO jugador y mercado."""
+    linea: float
+    side: str
+    probabilidad_pct: float
+    es_la_apostada: bool
+
+
+def sugerir_lineas(
+    player_name: str, market_text: str, line_text: str, sample: int = _DEFAULT_SAMPLE
+) -> list[Sugerencia]:
+    """Calcula qué habría pasado con OTRAS líneas del mismo mercado.
+
+    Es la pregunta que uno se hace mirando una apuesta: "¿me convenía
+    pedir más?". Si un pitcher promedia 6.3 hits permitidos y apostaste
+    Over 3.5, seguramente podías ir a Over 4.5 o 5.5 -misma seguridad,
+    bastante mejor cuota-.
+
+    Ojo con qué es y qué no: esto es frecuencia histórica sobre los
+    últimos partidos, la misma base que el resto del bot. Sirve para ver
+    si la línea que tomaste estaba floja respecto de lo que el jugador
+    viene haciendo, NO para prometer que va a pasar.
+    """
+    _player, side, threshold, _is_pitcher, stat_fields, games = _cargar_jugador_y_partidos(
+        player_name, market_text, line_text, sample
+    )
+
+    valores = [sum(g.get(f, 0) for f in stat_fields) for g in games]
+    if not valores:
+        return []
+
+    def _pct(limite: float) -> float:
+        if side == "Over":
+            aciertos = sum(1 for v in valores if v > limite)
+        else:
+            aciertos = sum(1 for v in valores if v < limite)
+        return round(aciertos / len(valores) * 100, 1)
+
+    # Candidatas: medios puntos alrededor de lo que el jugador viene
+    # haciendo. Se acotan al rango observado para no listar líneas
+    # absurdas que ninguna casa va a ofrecer.
+    tope = max(valores)
+    candidatas = [x + 0.5 for x in range(0, int(tope) + 1)]
+    if threshold not in candidatas:
+        candidatas.append(threshold)
+
+    return sorted(
+        (
+            Sugerencia(
+                linea=c,
+                side=side,
+                probabilidad_pct=_pct(c),
+                es_la_apostada=abs(c - threshold) < 0.01,
+            )
+            for c in candidatas
+        ),
+        key=lambda s: s.linea,
+    )
+
+
+def mejor_alternativa(sugerencias: list[Sugerencia], minimo_pct: float = 80.0) -> Sugerencia | None:
+    """De las alternativas, la MÁS exigente que igual mantiene una
+    probabilidad alta -o sea, la que paga más sin resignar seguridad.
+
+    Devuelve None si la línea apostada ya era la mejor: no tiene sentido
+    sugerir algo peor que lo que la persona ya eligió.
+    """
+    apostada = next((s for s in sugerencias if s.es_la_apostada), None)
+    if not apostada:
+        return None
+
+    if apostada.side == "Over":
+        # Subir la línea paga más; queremos la más alta que siga siendo segura.
+        mejores = [
+            s for s in sugerencias
+            if s.linea > apostada.linea and s.probabilidad_pct >= minimo_pct
+        ]
+        return max(mejores, key=lambda s: s.linea) if mejores else None
+
+    mejores = [
+        s for s in sugerencias
+        if s.linea < apostada.linea and s.probabilidad_pct >= minimo_pct
+    ]
+    return min(mejores, key=lambda s: s.linea) if mejores else None

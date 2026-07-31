@@ -52,6 +52,9 @@ class LiveLegStatus:
     progress_bar: str
     active_status: str  # texto tipo "🟢 en el partido" / "🔴 salió" / "❓ sin confirmar"
     status_text: str
+    # Hace falta para nombrar el mercado como lo hace Stake: "Strikeouts"
+    # de un pitcher y de un bateador son mercados distintos.
+    is_pitcher: bool = False
 
 
 def _split_match(match_text: str) -> tuple[str, str]:
@@ -300,6 +303,7 @@ def track_leg_live(leg: dict, boxscore: dict, live_state: dict) -> LiveLegStatus
         progress_bar=progress_bar,
         active_status=active_status,
         status_text=status_text,
+        is_pitcher=is_pitcher,
     )
 
 

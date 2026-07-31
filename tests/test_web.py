@@ -231,7 +231,7 @@ class TestNombreDeMercado:
     """La web muestra el mercado tal como hay que buscarlo en Stake."""
 
     def test_traduce_claves_de_la_api_de_odds(self):
-        assert nombre_stake("batter_hits_runs_rbis") == "Golpes + Carreras + Carreras Remolcadas"
+        assert nombre_stake("batter_hits_runs_rbis") == "Golpes + Carreras + Carreras Remolcadas (RBIs)"
 
     def test_no_arruina_nombres_ya_legibles(self):
         """El bug: '.title()' convertía 'RBIs' en 'Rbis'."""

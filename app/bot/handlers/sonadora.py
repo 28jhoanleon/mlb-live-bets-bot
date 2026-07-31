@@ -12,7 +12,7 @@ from app.analysis.combos import ValueCombo, find_dream_combos
 from app.odds.theodds import OddsClientError
 from app.db.database import guardar_combo_sugerido
 from app.utils.logger import get_logger
-from app.utils.market_labels import nombre_stake
+from app.utils.market_labels import nombre_stake_texto
 from app.utils.equipos import partido_corto
 from app.utils.tiempo import formato_hora_fecha
 from app.utils.telegram_helpers import edit_then_send_rest, escape_md
@@ -32,7 +32,7 @@ def _format_leg(leg) -> str:
     hora = formato_hora_fecha(leg.commence_time)
     return (
         f"   {escape_md(leg.player)} · {leg.probability_pct}%\n"
-        f"   _{escape_md(nombre_stake(leg.market))}_ {escape_md(leg.line)} @ {leg.odds}\n"
+        f"   _{escape_md(nombre_stake_texto(leg.market))}_ {escape_md(leg.line)} @ {leg.odds}\n"
         f"   {partido} · 🕐 {hora}"
     )
 

@@ -16,7 +16,13 @@ import hashlib
 from typing import Any
 
 from app.analysis.live_tracking import get_live_tracking_for_match, track_leg_live
-from app.analysis.probability import ProbabilityError, estimate_leg_detail, estimate_leg_probability
+from app.analysis.probability import (
+    ProbabilityError,
+    estimate_leg_detail,
+    estimate_leg_probability,
+    mejor_alternativa,
+    sugerir_lineas,
+)
 from app.analysis.tickets import normalize
 from app.db.database import (
     get_active_bet,
@@ -29,7 +35,7 @@ from app.mlb.estados import TERMINADO as _TERMINADO
 from app.mlb.schedule import buscar_partido
 from app.utils.equipos import logo_equipo, nombre_corto, partido_corto
 from app.utils.logger import get_logger
-from app.utils.market_labels import nombre_stake
+from app.utils.market_labels import nombre_stake_texto
 from app.utils.progress_bar import target_needed
 from app.utils.tiempo import formato_hora_fecha
 
@@ -83,7 +89,7 @@ def _leg_en_vivo(leg: dict, boxscore: dict, live_state: dict) -> dict[str, Any] 
             # promedio histórico de otra persona.
             return {
                 "player": leg.get("player") or "Sin jugador",
-                "market": nombre_stake(leg.get("market", "")) or leg.get("market", ""),
+                "market": nombre_stake_texto(leg.get("market", "")),
                 "line": leg.get("line", ""),
                 "odds": leg.get("odds"),
                 "current": 0,
@@ -102,7 +108,7 @@ def _leg_en_vivo(leg: dict, boxscore: dict, live_state: dict) -> dict[str, Any] 
     nota = "" if estado == "done" else status.status_text
     return {
         "player": status.player,
-        "market": nombre_stake(leg.get("market", "")) or leg.get("market", ""),
+        "market": nombre_stake_texto(leg.get("market", ""), status.is_pitcher),
         "line": leg.get("line", ""),
         "odds": leg.get("odds"),
         "current": status.current_value,
@@ -120,7 +126,7 @@ def _leg_historica(leg: dict) -> dict[str, Any]:
     últimos partidos superó esa línea."""
     base = {
         "player": leg.get("player") or "Sin jugador",
-        "market": nombre_stake(leg.get("market", "")) or leg.get("market", ""),
+        "market": nombre_stake_texto(leg.get("market", "")),
         "line": leg.get("line", ""),
         "odds": leg.get("odds"),
         "live": False,
@@ -139,8 +145,13 @@ def _leg_historica(leg: dict) -> dict[str, Any]:
         "current": cumplidos,
         "goal": est.sample_size,
         "pct": _pct(cumplidos, est.sample_size, False),
+        # Ahora que conocemos el rol, el nombre del mercado se puede
+        # desambiguar bien (los "Strikeouts" de un pitcher y los de un
+        # bateador son mercados distintos en Stake).
+        "market": nombre_stake_texto(leg.get("market", ""), est.is_pitcher),
         "state": "good" if est.probability_pct >= 60 else ("mid" if est.probability_pct >= 35 else "bad"),
         "note": f"{est.probability_pct}% en sus últimos {est.sample_size} · promedio {est.avg_value}",
+        "sugerencia": est.sugerencia,
     }
 
 
@@ -253,7 +264,7 @@ def _registrar_para_calibracion(
     # La leg mostrada trae el mercado ya traducido (nombre_stake), la
     # cruda no: hay que normalizar los dos lados o la clave no matchea.
     def _clave(jugador, mercado, linea):
-        return (jugador, nombre_stake(mercado or "") or (mercado or ""), linea)
+        return (jugador, nombre_stake_texto(mercado or ""), linea)
 
     prob_por_leg = {
         _clave(l.get("player"), l.get("market"), l.get("line")): l.get("prob_estimada")
@@ -363,7 +374,7 @@ def detalle_leg(player: str, market: str, line: str) -> dict[str, Any]:
     detalle = estimate_leg_detail(player, market, line)
     return {
         "player": detalle.player,
-        "market": nombre_stake(market) or market,
+        "market": nombre_stake_texto(market, detalle.is_pitcher),
         "side": detalle.side,
         "threshold": detalle.threshold,
         "probability_pct": detalle.probability_pct,
@@ -371,4 +382,35 @@ def detalle_leg(player: str, market: str, line: str) -> dict[str, Any]:
         "games": [
             {"date": g.date, "value": g.value, "hit": g.hit} for g in detalle.games
         ],
+        **_sugerencias_para(player, market, line),
+    }
+
+
+def _sugerencias_para(player: str, market: str, line: str) -> dict[str, Any]:
+    """Líneas alternativas del mismo mercado, para responder "¿me
+    convenía pedir más?". Si falla, se devuelve vacío: es información
+    extra, no puede tumbar el detalle."""
+    try:
+        opciones = sugerir_lineas(player, market, line)
+    except ProbabilityError:
+        return {"alternativas": [], "sugerencia": None}
+    except Exception:
+        log.exception("No pude calcular alternativas de línea")
+        return {"alternativas": [], "sugerencia": None}
+
+    mejor = mejor_alternativa(opciones)
+    return {
+        "alternativas": [
+            {
+                "linea": o.linea,
+                "side": o.side,
+                "pct": o.probabilidad_pct,
+                "apostada": o.es_la_apostada,
+            }
+            for o in opciones
+        ],
+        "sugerencia": (
+            {"linea": mejor.linea, "side": mejor.side, "pct": mejor.probabilidad_pct}
+            if mejor else None
+        ),
     }

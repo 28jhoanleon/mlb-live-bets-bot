@@ -464,9 +464,9 @@ class TestNombresDeMercadoStake:
     def test_traduce_a_como_lo_muestra_stake(self):
         from app.utils.market_labels import nombre_stake
 
-        assert nombre_stake("batter_hits") == "Golpes"
+        assert nombre_stake("batter_hits") == "Hits"
         assert nombre_stake("pitcher_outs") == "Salidas del Campo"
-        assert nombre_stake("batter_hits_runs_rbis") == "Golpes + Carreras + Carreras Remolcadas"
+        assert nombre_stake("batter_hits_runs_rbis") == "Golpes + Carreras + Carreras Remolcadas (RBIs)"
 
     def test_mercado_desconocido_no_rompe(self):
         from app.utils.market_labels import nombre_stake

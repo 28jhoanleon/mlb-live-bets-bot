@@ -18,7 +18,7 @@ from app.analysis.probability import (
 from app.db.database import listar_combos_sugeridos, marcar_resultado_combo
 from app.mlb.players import get_recent_hitting_games, search_player
 from app.utils.logger import get_logger
-from app.utils.market_labels import nombre_stake
+from app.utils.market_labels import nombre_stake_texto
 from app.utils.telegram_helpers import edit_then_send_rest, escape_md
 from app.utils.tiempo import a_local
 
@@ -94,7 +94,7 @@ def _formatear(combo: dict) -> str:
     for leg in combo.get("legs", []):
         lineas.append(
             f"   • {escape_md(leg.get('player', '?'))} — "
-            f"{escape_md(nombre_stake(leg.get('market', '')))} {escape_md(leg.get('line', ''))}"
+            f"{escape_md(nombre_stake_texto(leg.get('market', '')))} {escape_md(leg.get('line', ''))}"
         )
     if combo.get("resultado") == "perdida":
         lineas.append("   _no se dio_")
