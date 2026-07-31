@@ -18,7 +18,12 @@ from typing import Any
 from app.analysis.live_tracking import get_live_tracking_for_match, track_leg_live
 from app.analysis.probability import ProbabilityError, estimate_leg_detail, estimate_leg_probability
 from app.analysis.tickets import normalize
-from app.db.database import get_active_bet, marcar_terminado_si_hace_falta, olvidar_terminado
+from app.db.database import (
+    get_active_bet,
+    marcar_terminado_si_hace_falta,
+    olvidar_terminado,
+    registrar_legs_resueltas,
+)
 from app.mlb.estados import CON_DATOS as _CON_DATOS
 from app.mlb.estados import TERMINADO as _TERMINADO
 from app.mlb.schedule import buscar_partido
@@ -234,6 +239,50 @@ def _armar_grupo(match_text: str, legs_raw: list[dict]) -> dict[str, Any]:
     return grupo
 
 
+def _registrar_para_calibracion(
+    chat_id: int, ticket_id: str, grupos: list[dict], legs_raw: list[dict]
+) -> None:
+    """Guarda TODAS las legs del ticket recién terminado -acertadas y
+    falladas- con la probabilidad que se había estimado antes de que se
+    jugara. Es lo que después permite medir si el modelo está inflado.
+
+    A propósito NO se filtra por "el ticket salió ganador": guardar solo
+    los aciertos sería sesgo de supervivencia y no serviría para medir
+    nada. Un jugador puede haber sido un pick excelente y estar en un
+    ticket que se rompió por otro tramo."""
+    # La leg mostrada trae el mercado ya traducido (nombre_stake), la
+    # cruda no: hay que normalizar los dos lados o la clave no matchea.
+    def _clave(jugador, mercado, linea):
+        return (jugador, nombre_stake(mercado or "") or (mercado or ""), linea)
+
+    prob_por_leg = {
+        _clave(l.get("player"), l.get("market"), l.get("line")): l.get("prob_estimada")
+        for l in legs_raw
+    }
+
+    filas = []
+    for grupo in grupos:
+        for leg in grupo.get("legs", []):
+            if leg.get("state") not in ("done", "lost"):
+                continue  # sin resultado claro no aporta nada
+            clave = (leg.get("player"), leg.get("market"), leg.get("line"))
+            # leg["market"] ya viene traducido, así que no se vuelve a pasar
+            filas.append({
+                "jugador": leg.get("player"),
+                "mercado": leg.get("market"),
+                "linea": leg.get("line"),
+                "prob_estimada": prob_por_leg.get(clave),
+                "se_dio": leg.get("state") == "done",
+            })
+
+    if not filas:
+        return
+    try:
+        registrar_legs_resueltas(chat_id, ticket_id, filas)
+    except Exception:
+        log.exception("No pude registrar las legs resueltas para calibración")
+
+
 def _ticket_id(ticket: dict, legs_raw: list[dict]) -> str:
     """Id estable de un ticket, a partir de lo que NO cambia con el
     tiempo (label, cuota total, y qué legs son). El estado en vivo sí
@@ -283,6 +332,7 @@ def estado_apuestas(chat_id: int) -> dict[str, Any]:
         ticket_id = _ticket_id(ticket, legs_raw)
 
         if terminado:
+            _registrar_para_calibracion(chat_id, ticket_id, grupos, legs_raw)
             desde_iso = marcar_terminado_si_hace_falta(chat_id, ticket_id)
             desde = datetime.fromisoformat(desde_iso)
             if desde.tzinfo is None:

@@ -5,6 +5,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from app.bot.handlers import (
     alerts,
     analyze,
+    calibracion,
     combos_historial,
     compare,
     games,
@@ -15,6 +16,7 @@ from app.bot.handlers import (
     screenshot,
     sonadora,
     start,
+    statcast,
     value,
 )
 from app.config import settings
@@ -50,6 +52,8 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("combos", combos_historial.combos))
     app.add_handler(CommandHandler("refresh", screenshot.refresh_last_bet))
     app.add_handler(CommandHandler("nueva", screenshot.nueva_apuesta))
+    app.add_handler(CommandHandler("calibracion", calibracion.calibracion_cmd))
+    app.add_handler(CommandHandler("statcast", statcast.statcast_cmd))
     app.add_handler(CommandHandler("historial", history.historial))
     app.add_handler(CommandHandler("alertas", alerts.alertas_on))
     app.add_handler(CommandHandler("noalertas", alerts.alertas_off))

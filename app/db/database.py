@@ -81,6 +81,19 @@ def init_db() -> None:
                 resultado TEXT               -- NULL = sin resolver
             );
 
+            CREATE TABLE IF NOT EXISTS legs_resueltas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id TEXT NOT NULL,
+                ticket_id TEXT NOT NULL,
+                jugador TEXT,
+                mercado TEXT,
+                linea TEXT,
+                prob_estimada REAL,       -- lo que el bot predijo ANTES
+                se_dio INTEGER NOT NULL,  -- 1 acertó, 0 no
+                registrado_en TEXT NOT NULL,
+                UNIQUE (chat_id, ticket_id, jugador, mercado, linea)
+            );
+
             CREATE TABLE IF NOT EXISTS ticket_terminado (
                 chat_id TEXT NOT NULL,
                 ticket_id TEXT NOT NULL,
@@ -321,3 +334,81 @@ def prune_tickets_terminados(older_than_hours: int = 48) -> None:
             "DELETE FROM ticket_terminado WHERE terminado_desde < datetime('now', ?)",
             (f"-{older_than_hours} hours",),
         )
+
+
+# ---------- legs_resueltas (calibración del modelo) ----------
+#
+# Se guardan TODAS las legs resueltas, acertadas y falladas, junto con la
+# probabilidad que el bot había estimado. Guardar solo las ganadoras
+# sería sesgo de supervivencia: no se puede medir si un "70%" es honesto
+# mirando únicamente las veces que salió bien.
+
+def registrar_legs_resueltas(chat_id: int, ticket_id: str, legs: list[dict]) -> int:
+    """Guarda las legs de un ticket ya resuelto. Idempotente: si el
+    ticket ya fue registrado, no duplica (UNIQUE + INSERT OR IGNORE)."""
+    ahora = datetime.now(timezone.utc).isoformat()
+    filas = [
+        (
+            str(chat_id), ticket_id,
+            l.get("jugador"), l.get("mercado"), l.get("linea"),
+            l.get("prob_estimada"), 1 if l.get("se_dio") else 0, ahora,
+        )
+        for l in legs
+    ]
+    if not filas:
+        return 0
+    with _connection() as conn:
+        cur = conn.executemany(
+            "INSERT OR IGNORE INTO legs_resueltas "
+            "(chat_id, ticket_id, jugador, mercado, linea, prob_estimada, se_dio, registrado_en) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            filas,
+        )
+        return cur.rowcount
+
+
+def calibracion(chat_id: int) -> list[dict[str, Any]]:
+    """Agrupa las legs resueltas en tramos de probabilidad y compara lo
+    predicho contra lo que realmente pasó.
+
+    Si el bot dice 70% y en ese tramo acierta el 55%, está inflado."""
+    with _connection() as conn:
+        filas = conn.execute(
+            "SELECT prob_estimada, se_dio FROM legs_resueltas "
+            "WHERE chat_id = ? AND prob_estimada IS NOT NULL",
+            (str(chat_id),),
+        ).fetchall()
+
+    tramos: dict[int, list[int]] = {}
+    for f in filas:
+        piso = min(int(f["prob_estimada"] // 10 * 10), 90)
+        tramos.setdefault(piso, []).append(f["se_dio"])
+
+    salida = []
+    for piso in sorted(tramos):
+        resultados = tramos[piso]
+        salida.append({
+            "tramo": f"{piso}-{piso + 9}%",
+            "predicho_medio": piso + 5,
+            "real_pct": round(sum(resultados) / len(resultados) * 100, 1),
+            "muestra": len(resultados),
+        })
+    return salida
+
+
+def resumen_calibracion(chat_id: int) -> dict[str, Any]:
+    """Totales, para saber si ya hay muestra suficiente."""
+    with _connection() as conn:
+        fila = conn.execute(
+            "SELECT COUNT(*) AS total, SUM(se_dio) AS acertadas, "
+            "AVG(prob_estimada) AS prob_media FROM legs_resueltas "
+            "WHERE chat_id = ? AND prob_estimada IS NOT NULL",
+            (str(chat_id),),
+        ).fetchone()
+    total = fila["total"] or 0
+    return {
+        "total": total,
+        "acertadas": fila["acertadas"] or 0,
+        "real_pct": round((fila["acertadas"] or 0) / total * 100, 1) if total else 0.0,
+        "prob_media": round(fila["prob_media"], 1) if fila["prob_media"] else 0.0,
+    }

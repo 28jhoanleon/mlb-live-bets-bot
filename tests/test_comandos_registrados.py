@@ -5,18 +5,29 @@ faltaban comandos.
 
 Ahora la lista se deriva del registro real, y este test se asegura de
 que ningún comando desaparezca sin que nadie se entere."""
-import os
-
 from telegram.ext import CommandHandler, MessageHandler
-
-os.environ.setdefault("BOT_TOKEN", "123:fake")
 
 ESPERADOS = {
     "start", "help", "miid", "games", "today", "live", "props",
     "strikeouts", "hits", "hr", "analyze", "compare", "value",
     "sonadora", "sonadoras", "combos", "refresh", "nueva",
-    "historial", "alertas", "noalertas",
+    "historial", "alertas", "noalertas", "calibracion", "statcast",
 }
+
+
+def _preparar(tmp_path, monkeypatch):
+    """`settings` es un singleton congelado que se construye al importar
+    app.config, y para entonces puede no haber BOT_TOKEN todavía. Se
+    reemplaza por una copia con token, en el módulo que lo usa."""
+    import dataclasses
+
+    from app.bot import telegram_bot
+    from app.config import settings
+
+    monkeypatch.setattr(
+        telegram_bot, "settings", dataclasses.replace(settings, bot_token="123:fake")
+    )
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/bot.db")
 
 
 def _comandos_registrados():
@@ -33,14 +44,14 @@ def _comandos_registrados():
 
 class TestComandosRegistrados:
     def test_estan_todos_los_comandos_esperados(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/bot.db")
+        _preparar(tmp_path, monkeypatch)
         faltantes = ESPERADOS - _comandos_registrados()
         assert not faltantes, f"comandos que dejaron de estar registrados: {faltantes}"
 
     def test_las_capturas_siguen_teniendo_handler(self, tmp_path, monkeypatch):
         """Sin este handler el bot deja de leer capturas — que es su
         función principal."""
-        monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/bot.db")
+        _preparar(tmp_path, monkeypatch)
         from app.bot.telegram_bot import build_app
 
         app = build_app()

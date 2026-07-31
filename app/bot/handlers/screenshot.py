@@ -226,6 +226,12 @@ async def _format_ticket(ticket: dict, indice: int, total_tickets: int) -> str:
         leg_bloques.append(_format_historical_leg(i, leg, estimate, error, is_parlay))
         if estimate:
             estimates.append(estimate)
+            # Se guarda DENTRO de la leg para que quede persistida junto con
+            # la apuesta. Es la probabilidad que el bot estimó ANTES de que
+            # se jugara: el único número honesto para medir calibración
+            # después. Calcularla más tarde estaría contaminada, porque
+            # los "últimos 10 partidos" ya incluirían este mismo partido.
+            leg["prob_estimada"] = estimate.probability_pct
 
     # --- Encabezado del ticket ---
     titulo = f"🎫 *Apuesta {indice}/{total_tickets}*" if total_tickets > 1 else "🎫 *Apuesta*"
