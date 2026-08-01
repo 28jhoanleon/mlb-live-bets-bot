@@ -10,6 +10,7 @@ from app.bot.handlers import (
     compare,
     games,
     history,
+    limpiar,
     live,
     miid,
     props,
@@ -52,6 +53,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("combos", combos_historial.combos))
     app.add_handler(CommandHandler("refresh", screenshot.refresh_last_bet))
     app.add_handler(CommandHandler("nueva", screenshot.nueva_apuesta))
+    app.add_handler(CommandHandler("limpiar", limpiar.limpiar_cmd))
     app.add_handler(CommandHandler("calibracion", calibracion.calibracion_cmd))
     app.add_handler(CommandHandler("statcast", statcast.statcast_cmd))
     app.add_handler(CommandHandler("historial", history.historial))

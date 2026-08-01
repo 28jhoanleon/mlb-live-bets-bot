@@ -412,3 +412,32 @@ def resumen_calibracion(chat_id: int) -> dict[str, Any]:
         "real_pct": round((fila["acertadas"] or 0) / total * 100, 1) if total else 0.0,
         "prob_media": round(fila["prob_media"], 1) if fila["prob_media"] else 0.0,
     }
+
+
+def limpiar_resultados_combos(chat_id: int) -> int:
+    """Borra los resultados ya calculados para que se recalculen.
+
+    Hace falta porque los combos resueltos por la versión con bugs
+    quedaron con un resultado equivocado guardado, y el código sólo
+    resuelve los que están sin resolver: sin limpiarlos, esos combos se
+    quedarían mintiendo para siempre.
+
+    No borra los combos: sólo pone `resultado` en NULL."""
+    with _connection() as conn:
+        cur = conn.execute(
+            "UPDATE combos_sugeridos SET resultado = NULL "
+            "WHERE chat_id = ? AND resultado IS NOT NULL",
+            (chat_id,),
+        )
+        return cur.rowcount
+
+
+def limpiar_legs_resueltas(chat_id: int) -> int:
+    """Borra las legs guardadas para calibración.
+
+    Las que se registraron mientras el resolutor estaba roto tienen el
+    campo `se_dio` equivocado, y una calibración calculada sobre datos
+    falsos es peor que no tener calibración."""
+    with _connection() as conn:
+        cur = conn.execute("DELETE FROM legs_resueltas WHERE chat_id = ?", (str(chat_id),))
+        return cur.rowcount
