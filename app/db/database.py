@@ -135,8 +135,29 @@ def get_active_bet(chat_id: int) -> dict[str, Any] | None:
 # ---------- bet_history ----------
 
 def log_bet_analysis(chat_id: int, analysis: dict[str, Any]) -> None:
-    legs = analysis.get("legs", [])
-    match_summary = legs[0].get("match", "?") if legs else "?"
+    """Guarda un resumen legible de lo analizado, para /historial.
+
+    Bug que arregla: buscaba analysis["legs"] y analysis["is_parlay"],
+    claves que NO existen -- to_storage() devuelve {"bets": [...]}. Como
+    .get() no falla, cada entrada quedaba como "Apuesta simple — ?" sin
+    que nada avisara.
+    """
+    tickets = analysis.get("bets", [])
+    legs = [leg for t in tickets for leg in t.get("legs", [])]
+
+    # Resumen: los partidos distintos que toca la apuesta.
+    partidos = list(dict.fromkeys(
+        leg.get("match") for leg in legs if leg.get("match")
+    ))
+    if not partidos:
+        match_summary = "?"
+    elif len(partidos) == 1:
+        match_summary = partidos[0]
+    else:
+        match_summary = f"{partidos[0]} +{len(partidos) - 1}"
+
+    # Es combinada si tiene más de una selección, en uno o varios tickets.
+    es_combinada = len(legs) > 1
     with _connection() as conn:
         conn.execute(
             "INSERT INTO bet_history (chat_id, match_summary, is_parlay, analysis_json, created_at) "
@@ -144,7 +165,7 @@ def log_bet_analysis(chat_id: int, analysis: dict[str, Any]) -> None:
             (
                 chat_id,
                 match_summary,
-                int(bool(analysis.get("is_parlay"))),
+                int(es_combinada),
                 json.dumps(analysis),
                 datetime.now(timezone.utc).isoformat(),
             ),
@@ -154,7 +175,7 @@ def log_bet_analysis(chat_id: int, analysis: dict[str, Any]) -> None:
 def get_bet_history(chat_id: int, limit: int = 10) -> list[dict[str, Any]]:
     with _connection() as conn:
         rows = conn.execute(
-            "SELECT match_summary, is_parlay, created_at FROM bet_history "
+            "SELECT match_summary, is_parlay, analysis_json, created_at FROM bet_history "
             "WHERE chat_id = ? ORDER BY id DESC LIMIT ?",
             (chat_id, limit),
         ).fetchall()

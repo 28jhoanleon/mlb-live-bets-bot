@@ -48,11 +48,37 @@ def test_active_bet_overwrite(db_module):
 
 
 def test_bet_history_records_entries(db_module):
-    analysis = {"is_parlay": False, "legs": [{"match": "Team A vs Team B"}]}
+    """El test viejo usaba una estructura INVENTADA ({"legs": [...],
+    "is_parlay": ...}) que el código nunca produce: lo que se guarda de
+    verdad es {"bets": [{"legs": [...]}]}. Por eso pasaba en verde
+    mientras /historial mostraba "Apuesta simple — ?" para todo.
+
+    Ahora usa la forma que devuelve to_storage()."""
+    from app.analysis.tickets import to_storage
+
+    analysis = to_storage([
+        {"legs": [{"match": "Team A vs Team B", "player": "X"}], "total_odds": "1.90"},
+    ])
     db_module.log_bet_analysis(222, analysis)
     history = db_module.get_bet_history(222)
     assert len(history) == 1
     assert history[0]["match_summary"] == "Team A vs Team B"
+
+
+def test_bet_history_marca_combinadas(db_module):
+    from app.analysis.tickets import to_storage
+
+    analysis = to_storage([
+        {"legs": [
+            {"match": "A vs B", "player": "X"},
+            {"match": "C vs D", "player": "Y"},
+        ]},
+    ])
+    db_module.log_bet_analysis(223, analysis)
+    fila = db_module.get_bet_history(223)[0]
+    assert fila["is_parlay"] == 1
+    # Con varios partidos, el resumen indica cuántos más hay
+    assert "+1" in fila["match_summary"]
 
 
 def test_alert_subscription_toggle(db_module):
