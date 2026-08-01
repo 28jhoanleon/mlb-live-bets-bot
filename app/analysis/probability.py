@@ -108,6 +108,13 @@ def _classify_batter_market(market_text: str) -> list[str]:
         return ["strikeouts"]
     if "walk" in m or "caminata" in m or "base por bola" in m or "boleto" in m:
         return ["walks"]
+    # Estos dos ya estaban en la tabla de nombres de Stake pero nunca acá:
+    # como ahora la web muestra el nombre de Stake, ese texto vuelve a
+    # entrar por este clasificador y hay que reconocerlo.
+    if "total base" in m or "bases totales" in m:
+        return ["total_bases"]
+    if "single" in m or "simple" in m:
+        return ["singles"]
     if has_hits:
         return ["hits"]
     if has_runs and "home" not in m:
@@ -125,10 +132,22 @@ def _classify_pitcher_market(market_text: str) -> list[str]:
 
     if "ponche" in m or "strikeout" in m or m.strip() == "k":
         return ["strikeouts"]
+    # "Salidas del Campo" es como Stake llama a los outs. Faltaba, y como
+    # ahora mostramos el nombre de Stake en la web, ese texto volvía a
+    # entrar acá y no se reconocía: "Mercado de pitcheo no reconocido".
     if "out" in m and "strikeout" not in m:
+        return ["outs"]
+    if "salida" in m:
         return ["outs"]
     if "walk" in m or "caminata" in m or "base por bola" in m or "boleto" in m:
         return ["walks"]
+    # Estos dos ya estaban en la tabla de nombres de Stake pero nunca acá:
+    # como ahora la web muestra el nombre de Stake, ese texto vuelve a
+    # entrar por este clasificador y hay que reconocerlo.
+    if "total base" in m or "bases totales" in m:
+        return ["total_bases"]
+    if "single" in m or "simple" in m:
+        return ["singles"]
     if (
         "earned run" in m
         or "carrera limpia" in m

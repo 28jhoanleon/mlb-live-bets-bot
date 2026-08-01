@@ -16,6 +16,7 @@ from app.analysis.probability import (
     _parse_line,
 )
 from app.db.database import listar_combos_sugeridos, marcar_resultado_combo
+from app.mlb.pitchers import get_recent_pitching_games
 from app.mlb.players import get_recent_hitting_games, search_player
 from app.utils.logger import get_logger
 from app.utils.market_labels import nombre_stake_texto
@@ -27,16 +28,27 @@ log = get_logger(__name__)
 _DIVIDER = "━━━━━━━━━━━━━━━━"
 
 
-def _resolver_leg(leg: dict) -> bool | None:
+def _resolver_leg(leg: dict, fecha_sugerida: str | None) -> bool | None:
     """¿Se cumplió esta leg? None si todavía no se puede saber.
 
-    Busca el partido del jugador en la fecha en que se sugirió y compara
-    con la línea. Si no encuentra datos, devuelve None en vez de asumir
-    que perdió: dar por perdida una leg sin verificarla sería peor que
-    no responder.
+    Busca el partido del jugador EN LA FECHA en que se sugirió el combo y
+    compara con la línea. Si no encuentra ese partido devuelve None, en
+    vez de asumir que perdió o de mirar otro partido cualquiera.
+
+    Tres bugs que arregla, y que juntos hacían que se marcaran como "se
+    dio" combos que en realidad se perdieron:
+
+    1. Antes agarraba `partidos[0]` -el partido MÁS RECIENTE del
+       jugador- sin fijarse en la fecha. Si el jugador volvió a jugar
+       después, se evaluaba contra el partido equivocado.
+    2. Usaba get_recent_hitting_games incluso para PITCHERS, así que un
+       mercado como Strikeouts de un lanzador buscaba sus ponches como
+       bateador: casi siempre 0, y un "Under" daba ganado siempre.
+    3. Si el jugador no jugó ese día, `partidos[0]` era otro partido
+       distinto y devolvía un resultado inventado.
     """
     player_name = leg.get("player")
-    if not player_name:
+    if not player_name or not fecha_sugerida:
         return None
 
     try:
@@ -59,23 +71,35 @@ def _resolver_leg(leg: dict) -> bool | None:
         return None
 
     try:
-        partidos = get_recent_hitting_games(player["id"], last_n=5)
+        # El rol define de qué gameLog hay que traer los datos.
+        partidos = (
+            get_recent_pitching_games(player["id"], last_n=15)
+            if es_pitcher
+            else get_recent_hitting_games(player["id"], last_n=15)
+        )
     except Exception:
         log.exception("Error trayendo partidos para resolver leg")
         return None
 
-    if not partidos:
+    dia = str(fecha_sugerida)[:10]
+    partido = next((p for p in partidos if str(p.get("date", ""))[:10] == dia), None)
+    if partido is None:
+        # No jugó ese día (o todavía no está cargado): sin dato no se
+        # inventa un resultado.
         return None
 
-    # Usamos el partido más reciente: es el que corresponde a la sugerencia
-    valor = sum(partidos[0].get(c, 0) for c in campos)
+    valor = sum(partido.get(c, 0) for c in campos)
     return valor > threshold if side == "Over" else valor < threshold
 
 
 def _resolver_combo(combo: dict) -> str | None:
-    """'ganada', 'perdida', o None si falta información."""
-    resultados = [_resolver_leg(leg) for leg in combo.get("legs", [])]
-    if any(r is None for r in resultados):
+    """'ganada', 'perdida', o None si falta información.
+
+    Se resuelve contra la fecha en que se sugirió el combo, no contra el
+    último partido de cada jugador."""
+    fecha = combo.get("creado_en")
+    resultados = [_resolver_leg(leg, fecha) for leg in combo.get("legs", [])]
+    if not resultados or any(r is None for r in resultados):
         return None
     return "ganada" if all(resultados) else "perdida"
 

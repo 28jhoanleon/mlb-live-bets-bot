@@ -63,6 +63,18 @@ def get_recent_hitting_games(
                 "strikeouts": stat.get("strikeOuts", 0),
                 "walks": stat.get("baseOnBalls", 0),
                 "stolen_bases": stat.get("stolenBases", 0),
+                "total_bases": stat.get("totalBases", 0),
+                "doubles": stat.get("doubles", 0),
+                "triples": stat.get("triples", 0),
+                # La API no da los sencillos: son los hits que no fueron
+                # doble, triple ni jonrón.
+                "singles": max(
+                    0,
+                    stat.get("hits", 0)
+                    - stat.get("doubles", 0)
+                    - stat.get("triples", 0)
+                    - stat.get("homeRuns", 0),
+                ),
             }
         )
     return games
