@@ -88,7 +88,12 @@ def _classify_batter_market(market_text: str) -> list[str]:
     Remolcadas' matchea con 'carrera' y devuelve solo runs — contando de
     menos y dando una probabilidad equivocada.
     """
-    m = _normalize(market_text)
+    # Las claves de The Odds API vienen con guiones bajos
+    # ("batter_home_runs") y los textos de captura con espacios
+    # ("Home Runs"). Sin esto, "home run" nunca matcheaba contra
+    # "batter_home_runs": los home runs y las bases totales quedaban
+    # fuera de /value y de las soñadoras sin que nada avisara.
+    m = _normalize(market_text).replace("_", " ")
 
     # --- Combinados primero ---
     has_hits = "hit" in m or "golpe" in m
@@ -128,7 +133,7 @@ def _classify_pitcher_market(market_text: str) -> list[str]:
     Ojo con 'Golpes Permitidos' / 'Hits Allowed': es un mercado de
     pitcher, no de bateador.
     """
-    m = _normalize(market_text)
+    m = _normalize(market_text).replace("_", " ")
 
     if "ponche" in m or "strikeout" in m or m.strip() == "k":
         return ["strikeouts"]
@@ -167,6 +172,39 @@ def _classify_pitcher_market(market_text: str) -> list[str]:
     raise ProbabilityError(f"Mercado de pitcheo no reconocido: '{market_text}'")
 
 
+# Caché por corrida: al ampliar los mercados, el MISMO jugador aparece en
+# hasta 10 props distintos (hits, RBIs, bases totales, ...). Sin esto,
+# cada uno repetía las dos llamadas a la MLB API -búsqueda + gameLog-,
+# lo que multiplicaba el tráfico por diez, hacía que la API cortara y
+# dejaba a /sonadoras con "error inesperado".
+_cache_jugador: dict[str, dict | None] = {}
+_cache_partidos: dict[tuple[int, bool, int], list[dict]] = {}
+
+
+def limpiar_cache_estimaciones() -> None:
+    """Se llama al empezar un barrido para no arrastrar datos viejos."""
+    _cache_jugador.clear()
+    _cache_partidos.clear()
+
+
+def _buscar_jugador_cacheado(nombre: str) -> dict | None:
+    clave = _normalize(nombre)
+    if clave not in _cache_jugador:
+        _cache_jugador[clave] = search_player(nombre)
+    return _cache_jugador[clave]
+
+
+def _partidos_cacheados(player_id: int, es_pitcher: bool, sample: int) -> list[dict]:
+    clave = (player_id, es_pitcher, sample)
+    if clave not in _cache_partidos:
+        _cache_partidos[clave] = (
+            get_recent_pitching_games(player_id, last_n=sample)
+            if es_pitcher
+            else get_recent_hitting_games(player_id, last_n=sample)
+        )
+    return _cache_partidos[clave]
+
+
 def _cargar_jugador_y_partidos(
     player_name: str, market_text: str, line_text: str, sample: int = _DEFAULT_SAMPLE
 ) -> tuple[dict, str, float, bool, list[str], list[dict]]:
@@ -178,19 +216,19 @@ def _cargar_jugador_y_partidos(
     if not player_name or not line_text:
         raise ProbabilityError("Falta jugador o línea para poder estimar probabilidad.")
 
-    player = search_player(player_name)
+    player = _buscar_jugador_cacheado(player_name)
     if not player or not player.get("id"):
         raise ProbabilityError(f"No encontré a '{player_name}' en el roster actual de MLB.")
 
     side, threshold = _parse_line(line_text)
     is_pitcher = player.get("position") == "Pitcher"
 
-    if is_pitcher:
-        stat_fields = _classify_pitcher_market(market_text)
-        games = get_recent_pitching_games(player["id"], last_n=sample)
-    else:
-        stat_fields = _classify_batter_market(market_text)
-        games = get_recent_hitting_games(player["id"], last_n=sample)
+    stat_fields = (
+        _classify_pitcher_market(market_text)
+        if is_pitcher
+        else _classify_batter_market(market_text)
+    )
+    games = _partidos_cacheados(player["id"], is_pitcher, sample)
 
     if not games:
         raise ProbabilityError(

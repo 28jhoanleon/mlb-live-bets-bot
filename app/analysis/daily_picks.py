@@ -11,7 +11,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.analysis.probability import ProbabilityError, estimate_leg_probability
+from app.analysis.probability import (
+    ProbabilityError,
+    estimate_leg_probability,
+    limpiar_cache_estimaciones,
+)
 from app.analysis.value import implied_probability
 from app.utils.logger import get_logger
 from app.utils.tiempo import evento_vigente, formato_hora_fecha
@@ -67,6 +71,10 @@ def find_daily_picks(max_events: int = 12, min_edge_pct: float = _MIN_EDGE_FOR_P
     # a veces devuelve eventos viejos todavía en la lista.
     events = [e for e in events if evento_vigente(e.get("commence_time"))]
 
+    # El mismo jugador aparece en muchos mercados: sin limpiar y reusar la
+    # caché, cada prop repetiría las llamadas a la MLB API.
+    limpiar_cache_estimaciones()
+
     picks: list[DailyPick] = []
     for event in events[:max_events]:
         try:
@@ -93,6 +101,14 @@ def find_daily_picks(max_events: int = 12, min_edge_pct: float = _MIN_EDGE_FOR_P
                     try:
                         estimate = estimate_leg_probability(player, market_label, line_text)
                     except ProbabilityError:
+                        continue
+                    except Exception:
+                        # Un corte de red o un rate-limit de la MLB API en UN
+                        # prop no puede tumbar el barrido entero: antes
+                        # burbujeaba hasta el handler y /sonadoras terminaba
+                        # con "error inesperado" sin resultado alguno.
+                        log.warning("Fallo estimando %s (%s), sigo con el resto",
+                                    player, market_label, exc_info=True)
                         continue
 
                     market_prob = implied_probability(float(price)) * 100
