@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from app.mlb.pitchers import get_recent_pitching_games
@@ -203,6 +204,37 @@ def _partidos_cacheados(player_id: int, es_pitcher: bool, sample: int) -> list[d
             else get_recent_hitting_games(player_id, last_n=sample)
         )
     return _cache_partidos[clave]
+
+
+def precalentar_cache(nombres: list[str], sample: int = _DEFAULT_SAMPLE) -> None:
+    """Trae de antemano, EN PARALELO, los datos de todos los jugadores que
+    van a hacer falta.
+
+    Sin esto, un barrido de 12 partidos hacía ~430 llamadas a la MLB API
+    de a una: a medio segundo cada una son varios minutos, y /mejorar y
+    /sonadoras se quedaban colgados. Precalentando en paralelo, el bucle
+    que sigue no toca la red ni una vez -son todos aciertos de caché- y
+    el tiempo total pasa a ser el de la llamada más lenta, no la suma.
+    """
+    unicos = list(dict.fromkeys(n for n in nombres if n))
+    if not unicos:
+        return
+
+    def _traer(nombre: str) -> None:
+        try:
+            jugador = _buscar_jugador_cacheado(nombre)
+            if jugador and jugador.get("id"):
+                _partidos_cacheados(
+                    jugador["id"], jugador.get("position") == "Pitcher", sample
+                )
+        except Exception:
+            # Un jugador que falla no puede frenar al resto: cuando le
+            # toque su turno en el bucle se reintenta y, si vuelve a
+            # fallar, esa leg se descarta sola.
+            log.debug("No pude precalentar %s", nombre, exc_info=True)
+
+    with ThreadPoolExecutor(max_workers=12) as ex:
+        list(ex.map(_traer, unicos))
 
 
 def _cargar_jugador_y_partidos(

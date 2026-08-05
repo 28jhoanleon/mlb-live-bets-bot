@@ -11,10 +11,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from concurrent.futures import ThreadPoolExecutor
+
 from app.analysis.probability import (
     ProbabilityError,
     estimate_leg_probability,
     limpiar_cache_estimaciones,
+    precalentar_cache,
 )
 from app.analysis.value import implied_probability
 from app.utils.logger import get_logger
@@ -75,11 +78,33 @@ def find_daily_picks(max_events: int = 12, min_edge_pct: float = _MIN_EDGE_FOR_P
     # caché, cada prop repetiría las llamadas a la MLB API.
     limpiar_cache_estimaciones()
 
-    picks: list[DailyPick] = []
-    for event in events[:max_events]:
+    seleccionados = events[:max_events]
+
+    # Los props de cada partido son llamadas independientes: en paralelo
+    # tardan lo que la más lenta, no la suma de las doce.
+    def _props(event):
         try:
-            props_data = get_player_props(event["id"])
+            return event, get_player_props(event["id"])
         except OddsClientError:
+            return event, None
+
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        props_por_evento = list(ex.map(_props, seleccionados))
+
+    # Ahora que sabemos qué jugadores aparecen, se traen todos de una en
+    # paralelo. Después el bucle no toca la red: son aciertos de caché.
+    nombres = [
+        o.get("description")
+        for _, data in props_por_evento if data
+        for b in data.get("bookmakers", [])
+        for m in b.get("markets", [])
+        for o in m.get("outcomes", [])
+    ]
+    precalentar_cache(nombres)
+
+    picks: list[DailyPick] = []
+    for event, props_data in props_por_evento:
+        if not props_data:
             continue
 
         match_name = f"{event.get('away_team', '?')} @ {event.get('home_team', '?')}"

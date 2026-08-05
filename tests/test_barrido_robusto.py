@@ -126,3 +126,69 @@ class TestTodosLosMercadosSeReconocen:
                 fallan.append(clave)
 
         assert not fallan, f"mercados pedidos que no sabemos evaluar: {fallan}"
+
+
+class TestPrecalentadoParalelo:
+    """Bug real: /mejorar quedó 11 minutos en "Revisando tus tramos...".
+    La causa era que las ~430 llamadas a la MLB API se hacían de a una,
+    encadenadas. Precalentando en paralelo, el tiempo total pasa a ser
+    el de la llamada más lenta y no la suma de todas."""
+
+    def test_las_llamadas_no_se_encadenan(self):
+        import time
+
+        LATENCIA = 0.05
+        nombres = [f"Jugador {i}" for i in range(20)]
+
+        def _buscar(n):
+            time.sleep(LATENCIA)
+            return {"id": abs(hash(n)) % 9999, "full_name": n, "position": "Hitter"}
+
+        def _juegos(pid, last_n=10):
+            time.sleep(LATENCIA)
+            return [{"date": "2026-08-01", "hits": 1} for _ in range(10)]
+
+        prob.limpiar_cache_estimaciones()
+        with patch.object(prob, "search_player", side_effect=_buscar), \
+             patch.object(prob, "get_recent_hitting_games", side_effect=_juegos):
+            inicio = time.perf_counter()
+            prob.precalentar_cache(nombres)
+            duracion = time.perf_counter() - inicio
+
+        # En serie: 20 jugadores × 2 llamadas × 0.05s = 2s.
+        # En paralelo con 12 hilos: bastante menos. Margen amplio para no
+        # ser flaky en un runner lento.
+        assert duracion < 1.0, (
+            f"tardó {duracion:.2f}s -- parece estar encadenando las llamadas"
+        )
+
+    def test_despues_de_precalentar_no_se_toca_la_red(self):
+        """Lo que hace que valga la pena: el bucle que sigue son todos
+        aciertos de caché."""
+        prob.limpiar_cache_estimaciones()
+        with patch.object(prob, "search_player",
+                          return_value={"id": 1, "full_name": "X", "position": "Hitter"}), \
+             patch.object(prob, "get_recent_hitting_games",
+                          return_value=[{"date": "2026-08-01", "hits": 1} for _ in range(10)]):
+            prob.precalentar_cache(["X"])
+
+        # Ya cacheado: si volviera a la red, estos mocks explotarían.
+        def _explota(*a, **k):
+            raise AssertionError("volvió a pegarle a la red pese al precalentado")
+
+        with patch.object(prob, "search_player", side_effect=_explota), \
+             patch.object(prob, "get_recent_hitting_games", side_effect=_explota):
+            est = prob.estimate_leg_probability("X", "batter_hits", "Over 0.5")
+        assert est.player == "X"
+
+    def test_un_jugador_que_falla_no_frena_el_precalentado(self):
+        def _buscar(n):
+            if n == "Explota":
+                raise ConnectionError("cortó")
+            return {"id": 1, "full_name": n, "position": "Hitter"}
+
+        prob.limpiar_cache_estimaciones()
+        with patch.object(prob, "search_player", side_effect=_buscar), \
+             patch.object(prob, "get_recent_hitting_games",
+                          return_value=[{"date": "2026-08-01", "hits": 1} for _ in range(10)]):
+            prob.precalentar_cache(["Bueno", "Explota", "Otro"])  # no debe levantar

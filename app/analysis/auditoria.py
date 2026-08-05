@@ -13,7 +13,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from app.analysis.probability import ProbabilityError, estimate_leg_probability
+from app.analysis.probability import (
+    ProbabilityError,
+    estimate_leg_probability,
+    precalentar_cache,
+)
 from app.utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -65,6 +69,10 @@ class AuditoriaTicket:
 def auditar_legs(legs_raw: list[dict]) -> AuditoriaTicket:
     """Estima cada leg del ticket y las clasifica."""
     auditadas: list[LegAuditada] = []
+
+    # Traer todos los jugadores del ticket de una, en paralelo: con 12
+    # tramos, hacerlo de a uno son 24 llamadas encadenadas.
+    precalentar_cache([l.get("player") for l in legs_raw if l.get("player")])
 
     for leg in legs_raw:
         jugador = leg.get("player") or "?"
