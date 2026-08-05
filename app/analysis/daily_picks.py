@@ -18,7 +18,11 @@ from app.utils.tiempo import evento_vigente, formato_hora_fecha
 
 log = get_logger(__name__)
 
-_MIN_EDGE_FOR_PICK = 8.0  # más exigente que /value: acá la "probabilidad justa" es nuestra propia estimación, no consenso de mercado
+# Edge mínimo para considerar un pick. Antes 8.0, que sumado a pedir sólo
+# 3 mercados dejaba el pool casi vacío y las soñadoras nunca salían.
+# 5.0 sigue exigiendo ventaja real sobre la cuota, pero deja pasar
+# suficientes candidatas para poder combinar.
+_MIN_EDGE_FOR_PICK = 5.0
 
 
 @dataclass
@@ -47,7 +51,7 @@ def confidence_stars(edge_pct: float) -> str:
     return "⭐⭐"
 
 
-def find_daily_picks(max_events: int = 5, min_edge_pct: float = _MIN_EDGE_FOR_PICK) -> list[DailyPick]:
+def find_daily_picks(max_events: int = 12, min_edge_pct: float = _MIN_EDGE_FOR_PICK) -> list[DailyPick]:
     """Recorre los props del día, calcula nuestra propia probabilidad
     (últimos partidos reales) para cada uno, y la compara contra lo que
     implica la cuota de mercado. Devuelve los picks con mayor edge."""

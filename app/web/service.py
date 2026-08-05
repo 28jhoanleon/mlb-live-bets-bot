@@ -121,9 +121,46 @@ def _leg_en_vivo(leg: dict, boxscore: dict, live_state: dict) -> dict[str, Any] 
     }
 
 
+def _es_de_equipo(leg: dict) -> bool:
+    """Stake ofrece mercados de EQUIPO ("Equipo, bases por bolas") y de
+    PARTIDO ("Partido, ponches") además de los de jugador. No tienen
+    jugador asociado, así que no se pueden estimar con el historial de
+    un jugador."""
+    ambito = str(leg.get("ambito") or "").lower()
+    if ambito in ("equipo", "partido"):
+        return True
+    # Respaldo para apuestas leídas antes de que la visión extrajera
+    # "ambito": sin jugador no hay historial que consultar, así que es de
+    # equipo o de partido igual.
+    return not leg.get("player")
+
+
+def _leg_de_equipo(leg: dict) -> dict[str, Any]:
+    """Los mercados de equipo/partido se muestran identificados como
+    tales, en vez de "Sin jugador — Sin datos suficientes", que parecía
+    un error del bot cuando en realidad es un tipo de apuesta que no
+    seguimos."""
+    ambito = str(leg.get("ambito") or "").lower()
+    titulo = leg.get("team") or ("Todo el partido" if ambito == "partido" else "Apuesta de equipo")
+    return {
+        "player": titulo,
+        "market": nombre_stake_texto(leg.get("market", "")),
+        "line": leg.get("line", ""),
+        "odds": leg.get("odds"),
+        "current": 0,
+        "goal": 0,
+        "pct": 0,
+        "state": "unknown",
+        "note": "Mercado de equipo — todavía no lo sigo en vivo",
+        "live": False,
+    }
+
+
 def _leg_historica(leg: dict) -> dict[str, Any]:
     """Sin partido en vivo mostramos la forma reciente: en cuántos de sus
     últimos partidos superó esa línea."""
+    if _es_de_equipo(leg):
+        return _leg_de_equipo(leg)
     base = {
         "player": leg.get("player") or "Sin jugador",
         "market": nombre_stake_texto(leg.get("market", "")),
@@ -362,6 +399,12 @@ def estado_apuestas(chat_id: int) -> dict[str, Any]:
             "total": total,
             "live": any(g["live"] for g in grupos),
             "terminado": terminado,
+            # Una sola leg perdida ya rompe toda la combinada: no hace
+            # falta seguir mirándola tramo por tramo.
+            "caida": any(
+                l.get("state") == "lost"
+                for g in grupos for l in g.get("legs", [])
+            ),
         })
 
     return {"tickets": salida, "count": len(salida)}

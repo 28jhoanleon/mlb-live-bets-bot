@@ -104,6 +104,8 @@ Formato:
           "match": "Equipo A vs Equipo B",
           "match_datetime": "2026-07-30 13:10",
           "player": "Nombre del jugador o null",
+          "ambito": "jugador",
+          "team": null,
           "market": "Strikeouts",
           "line": "Over 6.5",
           "odds": "1.90",
@@ -120,6 +122,13 @@ Formato:
 - "odds" dentro de cada leg: la cuota individual, o null si la casa solo
   muestra la cuota total del ticket.
 - "match" dentro de cada leg: el partido al que pertenece ESA selección.
+- "player": el jugador de la selección. Stake también ofrece mercados de
+  EQUIPO y de PARTIDO, que no tienen jugador: los rotula "Partido,
+  ..." (ej. "Partido, ponches (strikeouts)" = ponches totales del juego)
+  o "Equipo, ..." (ej. "Equipo, bases por bolas del bateador" = de ese
+  equipo). En esos casos poné "player": null y además:
+- "ambito": "jugador" (por defecto), "equipo" o "partido". Si es de
+  equipo, poné en "team" el equipo al que se refiere.
 - "match_datetime": la fecha y hora del partido tal como la muestra la
   captura ("mié, 29 jul 7:40 p. m." -> "2026-07-29 19:40"), en formato
   "YYYY-MM-DD HH:MM" de 24 horas. Es IMPORTANTE: los mismos dos equipos

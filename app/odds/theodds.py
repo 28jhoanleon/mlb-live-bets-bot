@@ -99,8 +99,33 @@ def get_game_odds(markets: str = "h2h,totals") -> list[dict[str, Any]]:
     return games
 
 
-def get_player_props(event_id: str, markets: str = "pitcher_strikeouts,batter_hits,batter_home_runs") -> dict[str, Any]:
-    """Props de jugador (ponches, hits, HR) para un partido específico.
+# Todos los mercados de jugador que el bot sabe evaluar (los que tienen
+# su equivalente en el gameLog de la MLB API). Antes se pedían sólo tres
+# -ponches, hits y HR-: con un pool tan chico, las soñadoras casi nunca
+# encontraban suficientes legs con valor para armar una combinada.
+MERCADOS_SOPORTADOS = ",".join([
+    # Bateo
+    "batter_hits",
+    "batter_home_runs",
+    "batter_rbis",
+    "batter_runs_scored",
+    "batter_total_bases",
+    "batter_singles",
+    "batter_walks",
+    "batter_strikeouts",
+    "batter_stolen_bases",
+    "batter_hits_runs_rbis",
+    # Pitcheo
+    "pitcher_strikeouts",
+    "pitcher_outs",
+    "pitcher_hits_allowed",
+    "pitcher_earned_runs",
+    "pitcher_walks",
+])
+
+
+def get_player_props(event_id: str, markets: str = MERCADOS_SOPORTADOS) -> dict[str, Any]:
+    """Props de jugador para un partido específico.
 
     event_id se obtiene de get_game_odds() -> no viene en el payload actual,
     hace falta pegarle primero a /events para mapear partido -> event_id.

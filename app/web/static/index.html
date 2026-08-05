@@ -152,6 +152,11 @@ body{
 }
 .ticket.is-collapsed .chevron{transform:rotate(-90deg)}
 .ticket.is-collapsed .ticket__body{display:none}
+/* Combinada rota: se apaga sin desaparecer, para no confundirla con
+   una que sigue viva. */
+.ticket.is-dead{opacity:.55}
+.ticket.is-dead .tally b{color:var(--clay)}
+.final.dead{color:var(--clay);border-color:var(--clay)}
 
 /* Cuando un ticket tiene varios partidos, cada uno queda indentado y con
    un borde lateral -señal de que son PIEZAS de una sola apuesta, no
@@ -541,10 +546,14 @@ function ticket(t, i){
     : `${esc(t.total)} tramos`;
 
   const clave = claveTicket(t, i);
-  const colapsado = _colapsoManual.has(clave) ? _colapsoManual.get(clave) : !!t.terminado;
+  // Se colapsa sola si ya terminó o si ya está rota: en los dos casos
+  // no hay nada que seguir mirando.
+  const colapsado = _colapsoManual.has(clave)
+    ? _colapsoManual.get(clave)
+    : (!!t.terminado || !!t.caida);
 
   return `
-    <section class="ticket ${colapsado ? 'is-collapsed' : ''}" data-clave="${esc(clave)}">
+    <section class="ticket ${colapsado ? 'is-collapsed' : ''} ${t.caida && !t.terminado ? 'is-dead' : ''}" data-clave="${esc(clave)}">
       <div class="ticket__head" onclick="toggleTicket(this.closest('.ticket'))">
         <div class="matchup">
           ${etiqueta}<span class="tname">${tramos}</span>
@@ -552,7 +561,8 @@ function ticket(t, i){
         </div>
         <div class="meta">
           ${cuota} · ${esc(grupos.length)} ${grupos.length === 1 ? 'partido' : 'partidos'}
-          ${t.terminado ? '<span class="final">Terminada</span>' : ''}
+          ${t.terminado ? '<span class="final">Terminada</span>'
+            : (t.caida ? '<span class="final dead">Ya no puede darse</span>' : '')}
           <span class="chevron">⌄</span>
         </div>
       </div>

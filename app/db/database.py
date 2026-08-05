@@ -462,3 +462,29 @@ def limpiar_legs_resueltas(chat_id: int) -> int:
     with _connection() as conn:
         cur = conn.execute("DELETE FROM legs_resueltas WHERE chat_id = ?", (str(chat_id),))
         return cur.rowcount
+
+
+def borrar_ticket(chat_id: int, indice: int) -> str | None:
+    """Borra UN ticket de la apuesta activa, por su posición (1-based).
+
+    Complementa a /nueva, que borra todo. Devuelve una descripción del
+    ticket borrado, o None si el índice no existe."""
+    actual = get_active_bet(chat_id)
+    if not actual:
+        return None
+
+    tickets = actual.get("bets", [])
+    if indice < 1 or indice > len(tickets):
+        return None
+
+    borrado = tickets.pop(indice - 1)
+    legs = borrado.get("legs", [])
+    partido = legs[0].get("match", "?") if legs else "?"
+    descripcion = f"{partido} · {len(legs)} tramo(s)"
+
+    if tickets:
+        actual["bets"] = tickets
+        save_active_bet(chat_id, actual)
+    else:
+        clear_active_bet(chat_id)
+    return descripcion

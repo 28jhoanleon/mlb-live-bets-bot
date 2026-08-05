@@ -168,7 +168,7 @@ def find_dream_combos(
     max_legs: int = 6,
     max_results: int = 3,
     min_odds: float = _MIN_CUOTA_SONADORA,
-    max_events: int = 6,
+    max_events: int = 12,
 ) -> list[ValueCombo]:
     """Arma soñadoras: combinadas largas de cuota alta, pero SOLO con
     legs que tienen valor esperado positivo por separado.
@@ -191,7 +191,7 @@ def find_dream_combos(
     )
     candidatas = [
         _to_leg(p) for p in candidatas if p.our_probability_pct >= _MIN_PROB_LEG_SONADORA
-    ][:9]
+    ][:14]  # pool más grande: con 9 apenas alcanzaba para combinar
 
     combos: list[ValueCombo] = []
     for size in range(min_legs, max_legs + 1):
