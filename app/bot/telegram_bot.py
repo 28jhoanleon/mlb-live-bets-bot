@@ -32,6 +32,21 @@ log = get_logger(__name__)
 _ALERT_CHECK_INTERVAL_SECONDS = 300  # cada 5 minutos
 
 
+async def _manejar_error(update, context) -> None:
+    """Manejador global. El log decía "No error handlers are registered":
+    cuando un handler crasheaba, la excepción se perdía y el mensaje de
+    "Analizando..." quedaba congelado para siempre. Al menos ahora el
+    usuario se entera de que algo falló."""
+    log.exception("Excepción no atrapada en un handler", exc_info=context.error)
+    try:
+        if update and getattr(update, "effective_message", None):
+            await update.effective_message.reply_text(
+                "⚠️ Algo falló procesando ese comando. Ya quedó registrado."
+            )
+    except Exception:
+        log.exception("Tampoco pude avisarle al usuario")
+
+
 def build_app() -> Application:
     settings.validate()
     init_db()
@@ -89,6 +104,8 @@ def build_app() -> Application:
         )),)
         if presente
     ]
+    app.add_error_handler(_manejar_error)
+
     log.info("Handlers registrados: %s", ", ".join(comandos + extras))
     return app
 

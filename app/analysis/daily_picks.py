@@ -73,7 +73,12 @@ def find_daily_picks(
     """Recorre los props del día, calcula nuestra propia probabilidad
     (últimos partidos reales) para cada uno, y la compara contra lo que
     implica la cuota de mercado. Devuelve los picks con mayor edge."""
-    from app.odds.theodds import OddsClientError, get_events, get_player_props  # import local: evita ciclo
+    from app.odds.theodds import (  # import local: evita ciclo
+        OddsClientError,
+        get_events,
+        get_player_props,
+        partidos_que_alcanzan,
+    )
 
     arranque = time.monotonic()
 
@@ -94,7 +99,16 @@ def find_daily_picks(
     # caché, cada prop repetiría las llamadas a la MLB API.
     limpiar_cache_estimaciones()
 
-    seleccionados = events[:max_events]
+    # No arrancar un barrido que agotaría la cuota mensual: cada partido
+    # cuesta una consulta y el plan gratuito trae pocas. Antes se pedían
+    # 12 sin mirar, y el log mostró la cuota en negativo.
+    permitidos = partidos_que_alcanzan(max_events)
+    if permitidos == 0:
+        log.warning("Sin cuota en The Odds API: no hago el barrido")
+        return []
+    if permitidos < max_events:
+        log.info("Cuota justa: reviso %d partidos en vez de %d", permitidos, max_events)
+    seleccionados = events[:permitidos]
 
     # Los props de cada partido son llamadas independientes: en paralelo
     # tardan lo que la más lenta, no la suma de las doce.

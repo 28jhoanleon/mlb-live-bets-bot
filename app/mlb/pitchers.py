@@ -28,7 +28,13 @@ def get_season_pitching_stats(player_id: int, season: int | None = None) -> dict
         f"/people/{player_id}/stats",
         params={"stats": "season", "group": "pitching", "season": season},
     )
-    splits = data.get("stats", [{}])[0].get("splits", [])
+    # `stats` puede venir como lista VACÍA (no [{}]) cuando el
+    # jugador no tiene partidos cargados en esa categoría: por
+    # ejemplo un pitcher recién subido, o un bateador al que se
+    # le pide gameLog de pitcheo. El default [{}] no cubre ese
+    # caso -- el índice [0] reventaba con IndexError.
+    bloques = data.get("stats") or []
+    splits = bloques[0].get("splits", []) if bloques else []
     return splits[0].get("stat", {}) if splits else None
 
 
@@ -42,7 +48,13 @@ def get_recent_pitching_games(
         f"/people/{player_id}/stats",
         params={"stats": "gameLog", "group": "pitching", "season": season},
     )
-    splits = data.get("stats", [{}])[0].get("splits", [])
+    # `stats` puede venir como lista VACÍA (no [{}]) cuando el
+    # jugador no tiene partidos cargados en esa categoría: por
+    # ejemplo un pitcher recién subido, o un bateador al que se
+    # le pide gameLog de pitcheo. El default [{}] no cubre ese
+    # caso -- el índice [0] reventaba con IndexError.
+    bloques = data.get("stats") or []
+    splits = bloques[0].get("splits", []) if bloques else []
     games = []
     for s in splits[-last_n:]:
         stat = s.get("stat", {})

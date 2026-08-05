@@ -20,6 +20,26 @@ _BASE_URL = "https://api.the-odds-api.com/v4"
 _SPORT_KEY = "baseball_mlb"
 _TIMEOUT = 10
 
+# Última cuota informada por la API (cabecera x-requests-remaining). Se
+# usa para no arrancar barridos que la agotarían: el plan gratuito trae
+# pocas consultas por mes y cada partido cuesta una.
+_cuota_restante: int | None = None
+
+
+def cuota_restante() -> int | None:
+    return _cuota_restante
+
+
+def partidos_que_alcanzan(deseados: int, reserva: int = 10) -> int:
+    """Cuántos partidos se pueden consultar sin agotar la cuota.
+
+    Deja una reserva para que siempre quede margen para /props y
+    /value. Si no sabemos la cuota todavía, se confía en el pedido."""
+    if _cuota_restante is None:
+        return deseados
+    disponibles = max(0, _cuota_restante - reserva)
+    return min(deseados, disponibles)
+
 
 class OddsClientError(Exception):
     """Error al comunicarse con The Odds API."""
@@ -60,7 +80,9 @@ def _get(path: str, params: dict[str, Any]) -> Any:
         restantes = resp.headers.get("x-requests-remaining")
         if restantes is not None:
             try:
-                if int(restantes) < 25:
+                global _cuota_restante
+                _cuota_restante = int(restantes)
+                if _cuota_restante < 25:
                     log.warning("Quedan solo %s consultas en The Odds API", restantes)
             except ValueError:
                 pass

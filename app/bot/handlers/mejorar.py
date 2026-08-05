@@ -152,5 +152,5 @@ async def mejorar_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 "(cuotas no disponibles)._"
             )
 
-    await edit_then_send_rest(aviso, update, "\n".join(partes),
+    await edit_then_send_rest(aviso, "\n".join(partes),
                               parse_mode=ParseMode.MARKDOWN)
