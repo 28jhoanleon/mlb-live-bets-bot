@@ -5,6 +5,8 @@ soñadora tiene probabilidad baja por definición. Lo que la hace
 defendible no es la chance de acertar, sino que cada leg tenga valor
 esperado positivo — así el edge se acumula en vez de diluirse.
 """
+import asyncio
+
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -54,7 +56,17 @@ async def sonadora(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     processing = await update.message.reply_text("🌙 Armando soñadoras...")
 
     try:
-        combos = find_dream_combos()
+        # Techo duro: sin esto el comando puede quedarse mudo indefinidamente
+        # si la API de turno se pone lenta.
+        combos = await asyncio.wait_for(
+            asyncio.to_thread(find_dream_combos), timeout=150,
+        )
+    except asyncio.TimeoutError:
+        log.warning("find_dream_combos pasó el techo de tiempo")
+        await processing.edit_text(
+            "⚠️ Tardó demasiado en responder la API. Probá de nuevo en un rato."
+        )
+        return
     except OddsClientError as exc:
         # Mostramos el motivo real (clave, cuota agotada, sin props) en vez
         # de un "hubo un error" que no le dice nada al usuario.

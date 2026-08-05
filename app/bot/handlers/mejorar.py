@@ -61,10 +61,28 @@ async def mejorar_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         )
         return
 
-    aviso = await update.message.reply_text("Revisando tus tramos...")
-
     legs_raw = [leg for t in tickets for leg in t.get("legs", [])]
-    auditoria = await asyncio.to_thread(auditar_legs, legs_raw)
+    aviso = await update.message.reply_text(
+        f"Revisando {len(legs_raw)} tramos..."
+    )
+
+    # Techo duro: si algo se traba, el usuario recibe una respuesta igual
+    # en vez de quedarse mirando "Revisando..." indefinidamente.
+    try:
+        auditoria = await asyncio.wait_for(
+            asyncio.to_thread(auditar_legs, legs_raw), timeout=120,
+        )
+    except asyncio.TimeoutError:
+        log.warning("auditar_legs pasó el techo de tiempo")
+        await aviso.edit_text(
+            "Tardó demasiado en responder la API de estadísticas. "
+            "Probá de nuevo en un rato."
+        )
+        return
+    except Exception:
+        log.exception("Error auditando el ticket")
+        await aviso.edit_text("No pude revisar los tramos. Probá de nuevo.")
+        return
 
     partes = ["🔍 *Tu apuesta, tramo por tramo*", ""]
     partes.extend(_fmt_leg(l) for l in auditoria.legs)
@@ -91,8 +109,16 @@ async def mejorar_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     # Versión mejorada, solo si hay algo que mejorar
     if auditoria.flojas or auditoria.sin_datos:
+        await aviso.edit_text(
+            f"Revisé tus {len(legs_raw)} tramos. Buscando reemplazos..."
+        )
         try:
-            picks = await asyncio.to_thread(find_daily_picks)
+            picks = await asyncio.wait_for(
+                asyncio.to_thread(find_daily_picks), timeout=120,
+            )
+        except asyncio.TimeoutError:
+            log.warning("find_daily_picks pasó el techo de tiempo")
+            picks = []
         except Exception:
             log.exception("Error buscando picks para la mejorada")
             picks = []

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 from app.analysis.probability import (
@@ -58,11 +59,26 @@ def confidence_stars(edge_pct: float) -> str:
     return "⭐⭐"
 
 
-def find_daily_picks(max_events: int = 12, min_edge_pct: float = _MIN_EDGE_FOR_PICK) -> list[DailyPick]:
+# Tiempo máximo que puede tardar un barrido. Si se pasa, devuelve lo que
+# haya juntado hasta ahí en vez de seguir indefinidamente: es preferible
+# una respuesta parcial a un comando que se queda colgado sin decir nada.
+PRESUPUESTO_SEGUNDOS = 90
+
+
+def find_daily_picks(
+    max_events: int = 12,
+    min_edge_pct: float = _MIN_EDGE_FOR_PICK,
+    presupuesto_segundos: float = PRESUPUESTO_SEGUNDOS,
+) -> list[DailyPick]:
     """Recorre los props del día, calcula nuestra propia probabilidad
     (últimos partidos reales) para cada uno, y la compara contra lo que
     implica la cuota de mercado. Devuelve los picks con mayor edge."""
     from app.odds.theodds import OddsClientError, get_events, get_player_props  # import local: evita ciclo
+
+    arranque = time.monotonic()
+
+    def _sin_tiempo() -> bool:
+        return time.monotonic() - arranque > presupuesto_segundos
 
     try:
         events = get_events()
@@ -106,6 +122,12 @@ def find_daily_picks(max_events: int = 12, min_edge_pct: float = _MIN_EDGE_FOR_P
     for event, props_data in props_por_evento:
         if not props_data:
             continue
+        if _sin_tiempo():
+            log.warning(
+                "Corté el barrido por tiempo (%.0fs): devuelvo %d picks",
+                presupuesto_segundos, len(picks),
+            )
+            break
 
         match_name = f"{event.get('away_team', '?')} @ {event.get('home_team', '?')}"
         hora_evento = event.get("commence_time")
