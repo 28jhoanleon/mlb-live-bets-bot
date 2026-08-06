@@ -331,7 +331,16 @@ def estimate_leg_probability(player_name: str, market_text: str, line_text: str)
         if side == "Over"
         else sum(1 for v in values if v < threshold)
     )
-    probability_pct = round(hits_condition / len(values) * 100, 1)
+    # Suavizado (regla de sucesión de Laplace). "9 de 10" NO es 90%: con
+    # una muestra tan chica, ese número está sobreajustado a la racha
+    # reciente. Sumar un éxito y un fracaso ficticios lo corre hacia el
+    # 50% en proporción a lo poco que sabemos: 9/10 pasa a 83%, 10/10 a
+    # 92% en vez de un 100% que nunca es cierto.
+    #
+    # Esto es lo que hacía que las soñadoras dijeran 54% cuando el
+    # mercado pagaba como 9%: cada leg venía inflada, y al multiplicar
+    # cinco el error se potenciaba.
+    probability_pct = round((hits_condition + 1) / (len(values) + 2) * 100, 1)
     avg_value = round(sum(values) / len(values), 2)
 
     return LegEstimate(

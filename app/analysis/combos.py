@@ -77,10 +77,24 @@ def _build_combo(legs: tuple[ComboLeg, ...]) -> ValueCombo:
         prob *= leg.probability_pct / 100
         odds *= leg.odds
 
-    # Valor esperado: cuánto devuelve en promedio por cada peso apostado.
-    # Positivo = el combo paga más de lo que la probabilidad real justifica.
-    ev = (prob * odds - 1) * 100
     partidos = {leg.match for leg in legs}
+    same_game = len(partidos) == 1
+
+    # Penalización por dependencia. Multiplicar probabilidades supone que
+    # las legs son INDEPENDIENTES, y no lo son: comparten día, clima y
+    # rival, y si son del mismo partido comparten hasta el pitcher que
+    # enfrentan. Cuantas más legs, más se acumula el error: el producto
+    # crudo sobreestima siempre, y cada vez más.
+    #
+    # No hay una corrección exacta sin datos históricos propios -para eso
+    # está /calibracion-. Mientras tanto se aplica un descuento explícito
+    # y conservador, más fuerte cuando las legs son del mismo partido.
+    factor = 0.93 if same_game else 0.97
+    prob *= factor ** max(0, len(legs) - 1)
+
+    # El EV se calcula con la probabilidad YA corregida: calcularlo con la
+    # inflada mostraría valor donde no lo hay.
+    ev = (prob * odds - 1) * 100
 
     return ValueCombo(
         legs=list(legs),

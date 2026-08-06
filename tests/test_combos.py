@@ -111,7 +111,11 @@ class TestMatematica:
             _pick("C @ D", "Dos", 75.0, 1.50),
         ]
         combo = _combos(picks)[0]
-        assert combo.combined_probability_pct == 60.0  # 0.80 * 0.75
+        # El producto crudo sería 60.0 (0.80 * 0.75), pero se aplica un
+        # descuento por dependencia: las legs no son independientes
+        # -comparten día y condiciones- y multiplicar como si lo fueran
+        # sobreestima. Con 2 legs de partidos distintos: 60 * 0.97.
+        assert combo.combined_probability_pct == 58.2
 
     def test_cuota_combinada_es_el_producto(self):
         picks = [
