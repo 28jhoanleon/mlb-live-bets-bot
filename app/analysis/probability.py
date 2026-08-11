@@ -490,3 +490,135 @@ def mejor_alternativa(sugerencias: list[Sugerencia], minimo_pct: float = 80.0) -
         if s.linea < apostada.linea and s.probabilidad_pct >= minimo_pct
     ]
     return min(mejores, key=lambda s: s.linea) if mejores else None
+
+
+# --- Mercados de EQUIPO -----------------------------------------------
+
+
+def estimate_team_leg(
+    team_name: str, market_text: str, line_text: str, sample: int = _DEFAULT_SAMPLE
+) -> LegEstimate:
+    """Estima una línea de equipo ("Royals — caminatas Over 2.5").
+
+    Mismo método que con jugadores: mirar los últimos N partidos del
+    equipo y contar en cuántos se pasó la línea, con el mismo suavizado
+    para no tomar una racha corta como certeza.
+
+    El grupo importa y es fácil de confundir: los ponches de un equipo
+    BATEANDO (los que se comió) y los de su PITCHEO (los que repartió)
+    son mercados distintos. Se decide por el texto del mercado.
+    """
+    from app.mlb.equipos_stats import get_recent_team_games
+    from app.utils.equipos import id_equipo
+
+    if not team_name or not line_text:
+        raise ProbabilityError("Falta el equipo o la línea.")
+
+    team_id = id_equipo(team_name)
+    if not team_id:
+        raise ProbabilityError(f"No reconozco al equipo '{team_name}'.")
+
+    side, threshold = _parse_line(line_text)
+
+    m = _normalize(market_text).replace("_", " ")
+    es_pitcheo = any(
+        p in m for p in ("permitid", "allowed", "earned", "conseguid", "pitch")
+    )
+    grupo = "pitching" if es_pitcheo else "hitting"
+
+    campos = (
+        _classify_pitcher_market(market_text)
+        if es_pitcheo
+        else _classify_batter_market(market_text)
+    )
+
+    juegos = get_recent_team_games(team_id, grupo=grupo, last_n=sample)
+    if not juegos:
+        raise ProbabilityError(
+            f"No hay partidos recientes cargados para {team_name}."
+        )
+
+    valores = [sum(j.get(c, 0) for c in campos) for j in juegos]
+    aciertos = (
+        sum(1 for v in valores if v > threshold)
+        if side == "Over"
+        else sum(1 for v in valores if v < threshold)
+    )
+    probabilidad = round((aciertos + 1) / (len(valores) + 2) * 100, 1)
+
+    return LegEstimate(
+        player=team_name,
+        market=market_text,
+        side=side,
+        threshold=threshold,
+        probability_pct=probabilidad,
+        sample_size=len(valores),
+        avg_value=round(sum(valores) / len(valores), 2),
+        is_pitcher=es_pitcheo,
+        sugerencia=_sugerir_linea(valores, side, threshold, probabilidad),
+    )
+
+
+# --- Mercados de EQUIPO ------------------------------------------------
+
+@dataclass
+class TeamEstimate:
+    team: str
+    market: str
+    side: str
+    threshold: float
+    probability_pct: float
+    sample_size: int
+    avg_value: float
+
+
+def estimate_team_probability(
+    team_name: str, market_text: str, line_text: str, sample: int = _DEFAULT_SAMPLE
+) -> TeamEstimate:
+    """Estima un mercado de equipo con el gameLog del equipo.
+
+    Mismo criterio que en los mercados de jugador, incluido el suavizado
+    de Laplace: "9 de 10" no es 90% con una muestra tan chica.
+    """
+    from app.mlb.team_stats import (
+        campos_de_mercado_equipo,
+        es_mercado_de_pitcheo,
+        get_recent_team_games,
+    )
+    from app.utils.equipos import id_equipo
+
+    if not team_name or not line_text:
+        raise ProbabilityError("Falta el equipo o la línea.")
+
+    team_id = id_equipo(team_name)
+    if not team_id:
+        raise ProbabilityError(f"No reconozco al equipo '{team_name}'.")
+
+    campos = campos_de_mercado_equipo(market_text)
+    if not campos:
+        raise ProbabilityError(f"Mercado de equipo no reconocido: '{market_text}'")
+
+    side, threshold = _parse_line(line_text)
+    grupo = "pitching" if es_mercado_de_pitcheo(market_text) else "hitting"
+
+    juegos = get_recent_team_games(team_id, last_n=sample, group=grupo)
+    if not juegos:
+        raise ProbabilityError(f"No hay partidos recientes de {team_name}.")
+
+    valores = [sum(j.get(c, 0) for c in campos) for j in juegos]
+    aciertos = (
+        sum(1 for v in valores if v > threshold)
+        if side == "Over"
+        else sum(1 for v in valores if v < threshold)
+    )
+    probabilidad = round((aciertos + 1) / (len(valores) + 2) * 100, 1)
+
+    return TeamEstimate(
+        team=team_name,
+        market=market_text,
+        side=side,
+        threshold=threshold,
+        probability_pct=probabilidad,
+        sample_size=len(valores),
+        avg_value=round(sum(valores) / len(valores), 2),
+    )

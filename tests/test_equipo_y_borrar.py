@@ -33,12 +33,13 @@ class TestMercadosDeEquipo:
         tienen el campo, pero tampoco jugador."""
         assert _es_de_equipo({"market": "Strikeouts", "line": "Under 14.5", "player": None})
 
-    def test_no_dice_sin_datos_suficientes(self):
-        """Ese mensaje sugería que el bot falló; en realidad es un tipo
-        de apuesta que todavía no seguimos."""
+    def test_mercado_de_partido_explica_por_que_no_lo_estima(self):
+        """Los de PARTIDO siguen sin estimarse, pero el motivo se dice:
+        dependen de quiénes lancen ese día, no del historial del juego."""
         leg = {"ambito": "partido", "market": "Strikeouts", "line": "Under 14.5"}
-        assert "Sin datos suficientes" not in _leg_de_equipo(leg)["note"]
-        assert "equipo" in _leg_de_equipo(leg)["note"].lower()
+        nota = _leg_de_equipo(leg)["note"]
+        assert "Sin datos suficientes" not in nota
+        assert "pitcher" in nota.lower()
 
 
 @pytest.fixture

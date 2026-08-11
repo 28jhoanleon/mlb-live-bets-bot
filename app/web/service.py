@@ -20,6 +20,7 @@ from app.analysis.probability import (
     ProbabilityError,
     estimate_leg_detail,
     estimate_leg_probability,
+    estimate_team_probability,
     mejor_alternativa,
     sugerir_lineas,
 )
@@ -136,23 +137,49 @@ def _es_de_equipo(leg: dict) -> bool:
 
 
 def _leg_de_equipo(leg: dict) -> dict[str, Any]:
-    """Los mercados de equipo/partido se muestran identificados como
-    tales, en vez de "Sin jugador — Sin datos suficientes", que parecía
-    un error del bot cuando en realidad es un tipo de apuesta que no
-    seguimos."""
+    """Mercados sin jugador. Hay dos casos bien distintos:
+
+    - EQUIPO ("Royals, bases por bolas Over 2.5"): se estima con el
+      gameLog del equipo, igual que un jugador un nivel más arriba.
+    - PARTIDO ("Partido, ponches Under 14.5"): son los dos equipos
+      juntos y dependen de quiénes lancen ese día, así que el historial
+      del partido no sirve. Se muestra sin estimación a propósito: mejor
+      decir "no sé" que dar un número que suene preciso y no lo sea.
+    """
     ambito = str(leg.get("ambito") or "").lower()
-    titulo = leg.get("team") or ("Todo el partido" if ambito == "partido" else "Apuesta de equipo")
-    return {
-        "player": titulo,
+    equipo = leg.get("team")
+    base = {
+        "player": equipo or ("Todo el partido" if ambito == "partido" else "Apuesta de equipo"),
         "market": nombre_stake_texto(leg.get("market", "")),
         "line": leg.get("line", ""),
         "odds": leg.get("odds"),
         "current": 0,
         "goal": 0,
         "pct": 0,
-        "state": "unknown",
-        "note": "Mercado de equipo — todavía no lo sigo en vivo",
         "live": False,
+    }
+
+    if ambito == "partido" or not equipo:
+        return {**base, "state": "unknown",
+                "note": "Mercado de partido — depende de los pitchers del día, no lo estimo"}
+
+    try:
+        est = estimate_team_probability(equipo, leg.get("market", ""), leg.get("line", ""))
+    except ProbabilityError as e:
+        return {**base, "state": "unknown", "note": str(e)}
+    except Exception:
+        log.exception("Error estimando mercado de equipo")
+        return {**base, "state": "unknown", "note": "No pude traer las estadísticas del equipo"}
+
+    cumplidos = round(est.probability_pct / 100 * est.sample_size)
+    return {
+        **base,
+        "current": cumplidos,
+        "goal": est.sample_size,
+        "pct": _pct(cumplidos, est.sample_size, False),
+        "state": "good" if est.probability_pct >= 60 else ("mid" if est.probability_pct >= 35 else "bad"),
+        "note": (f"{est.probability_pct}% en sus últimos {est.sample_size} "
+                 f"· promedio {est.avg_value}"),
     }
 
 
