@@ -113,7 +113,19 @@ def buscar_partido(
     def _coincide(g: dict[str, Any]) -> bool:
         away = (g.get("away_team") or "").lower()
         home = (g.get("home_team") or "").lower()
-        return a in away or (h and h in home) or (h and h in away) or a in home
+        if h:
+            # Con los dos equipos, exigimos que cada uno matchee SU lado
+            # de ESE partido puntual (en cualquier orientación). Antes se
+            # aceptaba con que CUALQUIERA de los dos apareciera en
+            # CUALQUIER lado, lo que enganchaba el ticket al partido de
+            # otro rival: los mismos equipos juegan casi todos los días
+            # contra rivales distintos, y "Minnesota Twins" aparece igual
+            # de bien en su partido contra Baltimore que en el de contra
+            # Milwaukee.
+            return (a in away and h in home) or (a in home and h in away)
+        # Sin el segundo equipo (la IA no siempre lo separa bien), no hay
+        # con qué anclar: nos quedamos con el chequeo suelto de antes.
+        return a in away or a in home
 
     candidatos: list[dict[str, Any]] = []
     for offset in range(-DIAS_HACIA_ATRAS, 2):  # de N días atrás hasta mañana
