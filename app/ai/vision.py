@@ -61,6 +61,15 @@ IMPORTANTE — NORMALIZACIÓN. La captura puede estar en cualquier idioma, pero 
   "Menos de 2.5" -> "Under 2.5"
   "Bajo 1.5" -> "Under 1.5"
 
+  Si el mercado NO muestra ningún número (ej. "To Hit A Home Run",
+  "Anytime Home Run", "Home Run", "1+ Home Runs", "Anota un gol"),
+  es una apuesta de "al menos una vez": la línea implícita es 0.5 y
+  siempre es "Over".
+  "To Hit A Home Run" -> market "Home Runs", line "Over 0.5"
+  "Anytime Home Run" -> market "Home Runs", line "Over 0.5"
+  NUNCA devuelvas "line": null solo porque no hay un número visible en
+  ese tipo de apuesta "anytime" — deduce "Over 0.5".
+
 "market": usá EXACTAMENTE uno de estos nombres:
   Strikeouts, Batter Strikeouts, Hits, Runs, RBIs, Hits + Runs + RBIs,
   Home Runs, Walks, Stolen Bases, Outs, Hits Allowed, Earned Runs,
@@ -127,6 +136,20 @@ Formato:
   ..." (ej. "Partido, ponches (strikeouts)" = ponches totales del juego)
   o "Equipo, ..." (ej. "Equipo, bases por bolas del bateador" = de ese
   equipo). En esos casos poné "player": null y además:
+- "player" SIEMPRE debe ser el NOMBRE COMPLETO real del jugador
+  (nombre y apellido), nunca la abreviatura tal cual aparece en la
+  imagen. Muchas casas muestran solo la inicial del nombre de pila
+  (ej. "P.Alonso", "J.Pederson", "S.Ohtani", "P.Crow-Armstrong"): en
+  esos casos, usá tu conocimiento de los rosters actuales de MLB (y
+  el equipo/partido que se ve en la imagen como pista) para completar
+  el nombre real.
+  "P.Alonso" (con NYM en el partido) -> "Pete Alonso"
+  "J.Pederson" (con TEX en el partido) -> "Joc Pederson"
+  "S.Ohtani" (con LAD en el partido) -> "Shohei Ohtani"
+  "P.Crow-Armstrong" (con CHC en el partido) -> "Pete Crow-Armstrong"
+  Si de verdad no podés determinar con confianza el nombre completo,
+  dejá el nombre tal cual viene en la imagen — es mejor que perder la
+  selección, pero SIEMPRE preferí completar el nombre si lo reconocés.
 - "ambito": "jugador" (por defecto), "equipo" o "partido". Si es de
   equipo, poné en "team" el equipo al que se refiere.
 - "match_datetime": la fecha y hora del partido tal como la muestra la
