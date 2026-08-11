@@ -426,10 +426,12 @@ def estado_apuestas(chat_id: int) -> dict[str, Any]:
             "total": total,
             "live": any(g["live"] for g in grupos),
             "terminado": terminado,
-            # Una sola leg perdida ya rompe toda la combinada: no hace
-            # falta seguir mirándola tramo por tramo.
+            # Una sola leg perdida (o prácticamente decidida en contra,
+            # como un pitcher que ya salió del montículo sin cumplir) ya
+            # rompe toda la combinada: no hace falta seguir mirándola
+            # tramo por tramo.
             "caida": any(
-                l.get("state") == "lost"
+                l.get("state") in ("lost", "dead")
                 for g in grupos for l in g.get("legs", [])
             ),
         })
