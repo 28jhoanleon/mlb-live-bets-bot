@@ -38,6 +38,11 @@ class LegEstimate:
     avg_value: float
     is_pitcher: bool
     sugerencia: str | None = None  # otra línea del mismo mercado que rinde más
+    # Estos dos quedan disponibles para quien ya tenga el LegEstimate y
+    # necesite el jugador de nuevo (ej. un split contra la mano del
+    # abridor rival) -- así no hace falta buscarlo por nombre otra vez.
+    player_id: int | None = None
+    team: str | None = None
 
 
 def _normalize(text: str) -> str:
@@ -353,6 +358,8 @@ def estimate_leg_probability(player_name: str, market_text: str, line_text: str)
         avg_value=avg_value,
         is_pitcher=is_pitcher,
         sugerencia=_sugerir_linea(values, side, threshold, probability_pct),
+        player_id=player.get("id"),
+        team=player.get("team"),
     )
 
 

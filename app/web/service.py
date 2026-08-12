@@ -33,7 +33,8 @@ from app.db.database import (
 )
 from app.mlb.estados import CON_DATOS as _CON_DATOS
 from app.mlb.estados import TERMINADO as _TERMINADO
-from app.mlb.players import get_hitting_split_vs_hand, search_player
+from app.mlb.players import get_hitting_split_vs_hand, get_season_hitting_stats, search_player
+from app.analysis.probability import LegEstimate
 from app.mlb.schedule import buscar_partido
 from app.utils.equipos import logo_equipo, nombre_corto, partido_corto
 from app.utils.logger import get_logger
@@ -187,25 +188,26 @@ def _leg_de_equipo(leg: dict) -> dict[str, Any]:
 _NOMBRE_MANO = {"L": "zurdos", "R": "derechos"}
 
 
-def _split_vs_pitcher_texto(leg: dict, es_pitcher: bool) -> str:
+def _split_vs_pitcher_texto(leg: dict, est: LegEstimate) -> str:
     """Texto extra opcional: cómo batea el jugador de esta leg contra la
     mano del abridor rival. Es solo informativo -- nunca toca el % ni
     el promedio ya calculados. Cualquier fallo se traga en silencio: si
     no se puede armar, el mensaje de siempre sigue funcionando igual.
+
+    Reutiliza el jugador que `estimate_leg_probability` ya resolvió (en
+    vez de buscarlo de nuevo): la primera vez que agregué esto hacía una
+    búsqueda redundante por leg y eso duplicaba llamadas a la MLB API
+    sin necesidad -- el test de rendimiento en paralelo lo agarró.
     """
-    if es_pitcher:
+    if est.is_pitcher or not est.player_id:
         return ""
     try:
-        jugador = search_player(leg.get("player", ""))
-        if not jugador or not jugador.get("id"):
-            return ""
-
         a, h = _equipos_de(leg.get("match", "") or "")
         partido = buscar_partido(a, h, leg.get("match_datetime"))
         if not partido:
             return ""
 
-        equipo_jugador = (jugador.get("team") or "").lower()
+        equipo_jugador = (est.team or "").lower()
         away = (partido.get("away_team") or "").lower()
         home = (partido.get("home_team") or "").lower()
         if equipo_jugador and equipo_jugador in away:
@@ -222,13 +224,34 @@ def _split_vs_pitcher_texto(leg: dict, es_pitcher: bool) -> str:
         if mano not in ("L", "R"):
             return ""
 
-        split = get_hitting_split_vs_hand(jugador["id"], mano)
-        if not split:
+        split = get_hitting_split_vs_hand(est.player_id, mano)
+        if not split or split.get("avg") is None:
             return ""
 
+        temporada = get_season_hitting_stats(est.player_id)
+        if not temporada or temporada.get("avg") is None:
+            return ""
+
+        try:
+            avg_split = float(split["avg"])
+            avg_temporada = float(temporada["avg"])
+        except (TypeError, ValueError):
+            return ""
+
+        diferencia = avg_split - avg_temporada
+        # +/- 20 puntos de average (.020) es la diferencia minima que
+        # vale la pena mencionar -- por debajo de eso es ruido de
+        # muestra, no una tendencia real.
+        if diferencia >= 0.020:
+            veredicto = "le pega MEJOR de lo normal"
+        elif diferencia <= -0.020:
+            veredicto = "le cuesta MAS de lo normal"
+        else:
+            veredicto = "rinde parecido a su promedio"
+
         return (
-            f" · vs {_NOMBRE_MANO[mano]} esta temporada: {split['avg']}, "
-            f"{split['home_runs']} HR en {split['at_bats']} turnos"
+            f" · Contra {_NOMBRE_MANO[mano]} este año {veredicto} "
+            f"({split['avg']} vs. {temporada['avg']} en general)"
         )
     except Exception:
         log.debug("No pude armar el split vs pitcher para %s", leg.get("player"), exc_info=True)
@@ -268,7 +291,7 @@ def _leg_historica(leg: dict) -> dict[str, Any]:
         "state": "good" if est.probability_pct >= 60 else ("mid" if est.probability_pct >= 35 else "bad"),
         "note": (
             f"{est.probability_pct}% en sus últimos {est.sample_size} · promedio {est.avg_value}"
-            + _split_vs_pitcher_texto(leg, est.is_pitcher)
+            + _split_vs_pitcher_texto(leg, est)
         ),
         "sugerencia": est.sugerencia,
     }
