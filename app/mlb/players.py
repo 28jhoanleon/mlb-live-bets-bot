@@ -25,6 +25,58 @@ def search_player(name: str) -> dict[str, Any] | None:
         "full_name": p.get("fullName"),
         "team": p.get("currentTeam", {}).get("name"),
         "position": p.get("primaryPosition", {}).get("type"),  # 'Pitcher' o 'Hitter/Outfielder/etc'
+        "bats": p.get("batSide", {}).get("code"),  # 'L' / 'R' / 'S' (switch)
+        "throws": p.get("pitchHand", {}).get("code"),  # idem, mano de lanzar
+    }
+
+
+# Bajo esta muestra, un split contra una mano no dice nada -- es la
+# diferencia entre "20 turnos" y "temporada completa". Preferimos no
+# mostrar nada antes que mostrar un dato que parece sólido y es ruido.
+_MUESTRA_MINIMA_SPLIT = 20
+
+
+def get_hitting_split_vs_hand(
+    player_id: int, hand: str, season: int | None = None
+) -> dict[str, Any] | None:
+    """Cómo batea ESTE bateador en la temporada contra pitchers de esa
+    mano ('L' o 'R'). Es informativo -- no se usa para calcular
+    probabilidad, solo para mostrar contexto extra en el mensaje.
+
+    None si la API no tiene el split, o si la muestra es muy chica para
+    decir algo útil."""
+    if hand not in ("L", "R"):
+        return None
+    season = season or date.today().year
+    sit_code = "vl" if hand == "L" else "vr"
+    try:
+        data = get(
+            f"/people/{player_id}/stats",
+            params={
+                "stats": "statSplits",
+                "group": "hitting",
+                "sitCodes": sit_code,
+                "season": season,
+            },
+        )
+    except Exception:
+        log.debug("No pude traer el split vs %s para %s", hand, player_id, exc_info=True)
+        return None
+
+    bloques = data.get("stats") or []
+    splits = bloques[0].get("splits", []) if bloques else []
+    if not splits:
+        return None
+    stat = splits[0].get("stat", {})
+    at_bats = stat.get("atBats", 0)
+    if at_bats < _MUESTRA_MINIMA_SPLIT:
+        return None
+    return {
+        "hand": hand,
+        "at_bats": at_bats,
+        "avg": stat.get("avg"),
+        "home_runs": stat.get("homeRuns", 0),
+        "hits": stat.get("hits", 0),
     }
 
 

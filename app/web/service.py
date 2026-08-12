@@ -33,6 +33,7 @@ from app.db.database import (
 )
 from app.mlb.estados import CON_DATOS as _CON_DATOS
 from app.mlb.estados import TERMINADO as _TERMINADO
+from app.mlb.players import get_hitting_split_vs_hand, search_player
 from app.mlb.schedule import buscar_partido
 from app.utils.equipos import logo_equipo, nombre_corto, partido_corto
 from app.utils.logger import get_logger
@@ -183,6 +184,57 @@ def _leg_de_equipo(leg: dict) -> dict[str, Any]:
     }
 
 
+_NOMBRE_MANO = {"L": "zurdos", "R": "derechos"}
+
+
+def _split_vs_pitcher_texto(leg: dict, es_pitcher: bool) -> str:
+    """Texto extra opcional: cómo batea el jugador de esta leg contra la
+    mano del abridor rival. Es solo informativo -- nunca toca el % ni
+    el promedio ya calculados. Cualquier fallo se traga en silencio: si
+    no se puede armar, el mensaje de siempre sigue funcionando igual.
+    """
+    if es_pitcher:
+        return ""
+    try:
+        jugador = search_player(leg.get("player", ""))
+        if not jugador or not jugador.get("id"):
+            return ""
+
+        a, h = _equipos_de(leg.get("match", "") or "")
+        partido = buscar_partido(a, h, leg.get("match_datetime"))
+        if not partido:
+            return ""
+
+        equipo_jugador = (jugador.get("team") or "").lower()
+        away = (partido.get("away_team") or "").lower()
+        home = (partido.get("home_team") or "").lower()
+        if equipo_jugador and equipo_jugador in away:
+            pitcher_rival = partido.get("home_pitcher")
+        elif equipo_jugador and equipo_jugador in home:
+            pitcher_rival = partido.get("away_pitcher")
+        else:
+            return ""
+        if not pitcher_rival:
+            return ""
+
+        info_pitcher = search_player(pitcher_rival)
+        mano = info_pitcher.get("throws") if info_pitcher else None
+        if mano not in ("L", "R"):
+            return ""
+
+        split = get_hitting_split_vs_hand(jugador["id"], mano)
+        if not split:
+            return ""
+
+        return (
+            f" · vs {_NOMBRE_MANO[mano]} esta temporada: {split['avg']}, "
+            f"{split['home_runs']} HR en {split['at_bats']} turnos"
+        )
+    except Exception:
+        log.debug("No pude armar el split vs pitcher para %s", leg.get("player"), exc_info=True)
+        return ""
+
+
 def _leg_historica(leg: dict) -> dict[str, Any]:
     """Sin partido en vivo mostramos la forma reciente: en cuántos de sus
     últimos partidos superó esa línea."""
@@ -214,7 +266,10 @@ def _leg_historica(leg: dict) -> dict[str, Any]:
         # bateador son mercados distintos en Stake).
         "market": nombre_stake_texto(leg.get("market", ""), est.is_pitcher),
         "state": "good" if est.probability_pct >= 60 else ("mid" if est.probability_pct >= 35 else "bad"),
-        "note": f"{est.probability_pct}% en sus últimos {est.sample_size} · promedio {est.avg_value}",
+        "note": (
+            f"{est.probability_pct}% en sus últimos {est.sample_size} · promedio {est.avg_value}"
+            + _split_vs_pitcher_texto(leg, est.is_pitcher)
+        ),
         "sugerencia": est.sugerencia,
     }
 
