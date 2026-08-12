@@ -35,6 +35,7 @@ from app.mlb.estados import CON_DATOS as _CON_DATOS
 from app.mlb.estados import TERMINADO as _TERMINADO
 from app.mlb.players import get_hitting_split_vs_hand, get_season_hitting_stats, search_player
 from app.analysis.probability import LegEstimate
+from app.analysis.probability import LegEstimate
 from app.mlb.schedule import buscar_partido
 from app.utils.equipos import logo_equipo, nombre_corto, partido_corto
 from app.utils.logger import get_logger

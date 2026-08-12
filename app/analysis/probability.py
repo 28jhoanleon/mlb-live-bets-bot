@@ -43,6 +43,11 @@ class LegEstimate:
     # abridor rival) -- así no hace falta buscarlo por nombre otra vez.
     player_id: int | None = None
     team: str | None = None
+    # Estos dos quedan disponibles para quien ya tenga el LegEstimate y
+    # necesite el jugador de nuevo (ej. un split contra la mano del
+    # abridor rival) -- así no hace falta buscarlo por nombre otra vez.
+    player_id: int | None = None
+    team: str | None = None
 
 
 def _normalize(text: str) -> str:
