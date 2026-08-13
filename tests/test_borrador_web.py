@@ -77,3 +77,84 @@ class TestBorradoresFueraDeCalibracion:
         assert 'if terminado and not ticket.get("borrador"):' in fuente, (
             "los borradores volverían a contar para calibración"
         )
+
+
+class TestLaMarcaSobreviveANormalize:
+    """Bug real: el bot decía "guardada como borrador" pero en la web
+    aparecía como apuesta normal, sin cartel ni botones.
+
+    normalize() reconstruye cada ticket con una lista fija de campos, y
+    cualquier campo que no esté en esa lista se pierde en silencio. La
+    marca de borrador era uno de ellos."""
+
+    def test_normalize_conserva_el_borrador(self):
+        from app.analysis.tickets import normalize
+
+        analysis = {"bets": [{
+            "total_odds": "7.25",
+            "borrador": True,
+            "legs": [{"match": "A @ B", "player": "X",
+                      "market": "batter_hits", "line": "Over 0.5"}],
+        }], "is_live": False}
+
+        tickets = normalize(analysis)
+        assert tickets, "normalize devolvió vacío"
+        assert tickets[0]["borrador"] is True, (
+            "se perdió la marca: la web lo muestra como apuesta real"
+        )
+
+    def test_una_apuesta_normal_no_queda_marcada(self):
+        from app.analysis.tickets import normalize
+
+        analysis = {"bets": [{
+            "total_odds": "7.25",
+            "legs": [{"match": "A @ B", "player": "X",
+                      "market": "batter_hits", "line": "Over 0.5"}],
+        }], "is_live": False}
+        assert normalize(analysis)[0]["borrador"] is False
+
+
+class TestElFlagSobreviveANormalize:
+    """Bug real: el borrador se guardaba bien, pero `normalize` --que
+    reconstruye cada ticket con una lista FIJA de campos-- descartaba la
+    marca. Llegaba a la web como apuesta normal: sin cartel y sin los
+    botones de confirmar o descartar."""
+
+    def test_normalize_conserva_la_marca(self):
+        from app.analysis.tickets import normalize
+
+        analisis = {"bets": [{
+            "legs": [{"match": "A @ B", "player": "X",
+                      "market": "batter_hits", "line": "Over 0.5"}],
+            "total_odds": "7.25", "borrador": True,
+        }], "is_live": False}
+
+        assert all(t.get("borrador") for t in normalize(analisis))
+
+    def test_una_apuesta_normal_no_queda_marcada(self):
+        from app.analysis.tickets import normalize
+
+        analisis = {"bets": [{
+            "legs": [{"match": "A @ B", "player": "X",
+                      "market": "batter_hits", "line": "Over 0.5"}],
+            "total_odds": "7.25",
+        }], "is_live": False}
+
+        assert not any(t.get("borrador") for t in normalize(analisis))
+
+    def test_sobrevive_aunque_el_ticket_se_divida_por_partido(self):
+        """Una combinada de varios partidos se parte en varios tickets:
+        todos tienen que conservar la marca."""
+        from app.analysis.tickets import normalize
+
+        analisis = {"bets": [{
+            "legs": [
+                {"match": "A @ B", "player": "X", "market": "batter_hits", "line": "Over 0.5"},
+                {"match": "C @ D", "player": "Y", "market": "batter_hits", "line": "Over 0.5"},
+            ],
+            "total_odds": "7.25", "borrador": True,
+        }], "is_live": False}
+
+        tickets = normalize(analisis)
+        assert tickets
+        assert all(t.get("borrador") for t in tickets)

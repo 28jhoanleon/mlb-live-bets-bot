@@ -105,6 +105,12 @@ def normalize(analysis: dict[str, Any]) -> list[dict[str, Any]]:
                 "label": bet.get("label") or analysis.get("label"),
                 "legs_declaradas": bet.get("legs_declaradas"),
                 "is_live": bool(bet.get("is_live", analysis.get("is_live"))),
+                # La marca de borrador tiene que sobrevivir a normalize:
+                # se reconstruye el ticket con una lista fija de campos y
+                # cualquier otro se pierde. Sin esto, una apuesta guardada
+                # con "probar" se veía en la web como si fuera real, sin
+                # el cartel ni los botones de confirmar/descartar.
+                "borrador": bool(bet.get("borrador")),
                 "legs": legs,
             }
             tickets.extend(_dividir_por_partido(ticket))

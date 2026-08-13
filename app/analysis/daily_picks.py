@@ -14,6 +14,7 @@ from dataclasses import dataclass
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+from app.analysis.pitcher_rival import factor_por_pitcher_rival, limpiar_cache_pitchers
 from app.analysis.probability import (
     ProbabilityError,
     estimate_leg_probability,
@@ -94,6 +95,41 @@ def _linea_existe(market_key: str, punto: float | None) -> bool:
     return minimo is None or punto >= minimo
 
 
+def _pitcher_rival_de(event: dict, jugador: str) -> str | None:
+    """Qué abridor enfrenta este bateador.
+
+    Un bateador del equipo visitante enfrenta al abridor LOCAL y
+    viceversa. Si no sabemos de qué equipo es el jugador, o el probable
+    todavía no se publicó, se devuelve None y no se ajusta nada: nunca
+    conviene adivinar cuál de los dos es.
+    """
+    from app.mlb.schedule import buscar_partido
+
+    try:
+        partido = buscar_partido(
+            event.get("away_team", ""), event.get("home_team", ""),
+        )
+    except Exception:
+        return None
+    if not partido:
+        return None
+
+    from app.mlb.players import search_player
+
+    try:
+        datos = search_player(jugador)
+    except Exception:
+        return None
+    equipo_jugador = (datos or {}).get("team") or ""
+    if not equipo_jugador:
+        return None
+
+    local = (partido.get("home_team") or "").lower()
+    if equipo_jugador.lower() in local or local in equipo_jugador.lower():
+        return partido.get("away_pitcher")  # batea el local -> abridor visitante
+    return partido.get("home_pitcher")
+
+
 def find_daily_picks(
     max_events: int = 12,
     min_edge_pct: float = _MIN_EDGE_FOR_PICK,
@@ -116,6 +152,7 @@ def find_daily_picks(
         return time.monotonic() - arranque > presupuesto_segundos
 
     limpiar_cache_estimaciones()
+    limpiar_cache_pitchers()
 
     props_por_evento: list[tuple[dict, dict | None]] = []
 
@@ -219,7 +256,18 @@ def find_daily_picks(
                         continue
 
                     market_prob = implied_probability(float(price)) * 100
-                    edge = estimate.probability_pct - market_prob
+                    # Ajuste por el pitcher rival: la variable que más
+                    # pesa en props de bateo y que hasta ahora ignorábamos.
+                    # Un bateador que promedia 1.2 hits no vale lo mismo
+                    # contra un as que contra un abridor castigado.
+                    factor = 1.0
+                    if not market_label.startswith("pitcher_"):
+                        factor = factor_por_pitcher_rival(
+                            _pitcher_rival_de(event, player)
+                        )
+                    prob_ajustada = min(99.0, estimate.probability_pct * factor)
+
+                    edge = prob_ajustada - market_prob
                     if edge < min_edge_pct:
                         continue
 
@@ -247,7 +295,7 @@ def find_daily_picks(
                             market=market_label,
                             line=line_text,
                             odds=float(price),
-                            our_probability_pct=estimate.probability_pct,
+                            our_probability_pct=round(prob_ajustada, 1),
                             market_probability_pct=round(market_prob, 1),
                             edge_pct=round(edge, 1),
                             sample_size=estimate.sample_size,
