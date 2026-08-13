@@ -17,7 +17,7 @@ from app.analysis.probability import LegEstimate, ProbabilityError
 def _payload(jugadores, mercados):
     return {"bookmakers": [{"title": "Stake", "markets": [
         {"key": m, "outcomes": [
-            {"description": j, "name": "Over", "point": 0.5, "price": 2.5}
+            {"description": j, "name": "Over", "point": 0.5, "price": 1.45}
             for j in jugadores
         ]} for m in mercados
     ]}]}

@@ -226,10 +226,17 @@ def find_daily_picks(
                     if not _linea_existe(market_label, point):
                         continue
 
-                    if edge > _EDGE_MAXIMO_CREIBLE:
+                    # El techo se mide en PROPORCIÓN, no en puntos. Decir
+                    # "76.9% cuando el mercado paga 43.5%" son 33 puntos
+                    # de diferencia pero un 77% de ventaja relativa, que
+                    # es lo que después se multiplica al combinar legs.
+                    # Medido en puntos, el filtro dejaba pasar justo los
+                    # casos que hacían explotar el valor del combo.
+                    edge_relativo = (edge / market_prob * 100) if market_prob > 0 else 0.0
+                    if edge_relativo > _EDGE_MAXIMO_CREIBLE:
                         log.info(
-                            "Descarto %s %s %s: ventaja de %.0f%% no es creíble",
-                            player, market_label, line_text, edge,
+                            "Descarto %s %s %s: ventaja relativa de %.0f%% no es creíble",
+                            player, market_label, line_text, edge_relativo,
                         )
                         continue
 

@@ -73,3 +73,48 @@ class TestCoberturaDeMercadosDePitcheo:
 
         faltantes = [m for m in _MERCADOS_PITCHEO.values() if m not in _LINEA_MINIMA]
         assert not faltantes, f"mercados de pitcheo sin línea mínima: {faltantes}"
+
+
+class TestTechoRelativoNoEnPuntos:
+    """El techo de ventaja se medía en PUNTOS de diferencia y por eso no
+    frenaba nada. Caso real de la captura: nuestra estimación 76.9%
+    contra un mercado que paga 43.5% son 33 puntos -- pasaba el filtro
+    de 40-- pero es un 77% de ventaja relativa. Al multiplicar cuatro
+    legs así, el valor del combo daba +389%.
+    """
+
+    def _relativo(self, nuestra_pct, cuota):
+        mercado = 100 / cuota
+        return (nuestra_pct - mercado) / mercado * 100
+
+    def test_el_caso_de_la_captura_se_descarta(self):
+        assert self._relativo(76.9, 2.3) > _EDGE_MAXIMO_CREIBLE
+
+    def test_una_ventaja_moderada_sigue_pasando(self):
+        """No queremos filtrar de más: un edge chico y creíble tiene que
+        sobrevivir, si no nunca sale ninguna soñadora."""
+        assert self._relativo(50.0, 2.5) < _EDGE_MAXIMO_CREIBLE
+
+    def test_medido_en_puntos_el_filtro_no_servia(self):
+        """Demuestra por qué había que cambiar la medida."""
+        en_puntos = 76.9 - (100 / 2.3)
+        assert en_puntos < _EDGE_MAXIMO_CREIBLE, (
+            "en puntos el caso roto pasaba el filtro: por eso se mide "
+            "en proporción"
+        )
+
+
+class TestTechoDelCombo:
+    def test_hay_techo_para_el_valor_esperado(self):
+        from app.analysis.combos import _EV_MAXIMO_CREIBLE
+
+        assert _EV_MAXIMO_CREIBLE > 0
+
+    def test_los_valores_rotos_quedan_afuera(self):
+        """Las soñadoras mostraban +389%, +373% y +504%: un combo que
+        promete multiplicar por cinco lo apostado EN PROMEDIO no es una
+        oportunidad, es error acumulado."""
+        from app.analysis.combos import _EV_MAXIMO_CREIBLE
+
+        for ev_roto in (389.2, 373.0, 504.6, 13862.6):
+            assert ev_roto > _EV_MAXIMO_CREIBLE

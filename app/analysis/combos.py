@@ -139,6 +139,13 @@ def find_value_combos(
             if combo.combined_probability_pct < min_prob_combo:
                 continue
             if combo.expected_value_pct <= 0:
+                continue
+            # Un combo que promete multiplicar por cinco lo apostado EN
+            # PROMEDIO no es una oportunidad: es la señal de que las legs
+            # vienen sobreestimadas y el error se potenció al
+            # multiplicarlas. Preferimos no mostrar nada antes que
+            # mostrar un número que no se puede cumplir.
+            if combo.expected_value_pct > _EV_MAXIMO_CREIBLE:
                 continue  # sin valor esperado positivo no lo ofrecemos
             if combo.combined_odds < min_odds:
                 continue
@@ -168,6 +175,7 @@ def find_value_combos(
 # pagan alto son inherentemente menos probables) pero NO negociamos el
 # requisito de valor positivo.
 
+_EV_MAXIMO_CREIBLE = 150.0  # +150% de valor esperado ya es muchísimo
 _MIN_PROB_LEG_SONADORA = 30.0
 _MIN_CUOTA_SONADORA = 8.0
 
@@ -216,6 +224,13 @@ def find_dream_combos(
             if combo.combined_odds < min_odds:
                 continue
             if combo.expected_value_pct <= 0:
+                continue
+            # Un combo que promete multiplicar por cinco lo apostado EN
+            # PROMEDIO no es una oportunidad: es la señal de que las legs
+            # vienen sobreestimadas y el error se potenció al
+            # multiplicarlas. Preferimos no mostrar nada antes que
+            # mostrar un número que no se puede cumplir.
+            if combo.expected_value_pct > _EV_MAXIMO_CREIBLE:
                 continue
             combos.append(combo)
 
