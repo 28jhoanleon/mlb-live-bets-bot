@@ -315,6 +315,7 @@ async def _procesar_y_responder(
     """
     analisis: list[dict] = []
     fallidas = 0
+    motivos: list[str] = []
 
     for i, img in enumerate(imagenes, 1):
         if len(imagenes) > 1:
@@ -335,14 +336,23 @@ async def _procesar_y_responder(
             analisis.append(leido)
         except VisionAnalysisError as exc:
             log.warning("Falló el análisis de una captura: %s", exc)
+            motivos.append(str(exc))
             fallidas += 1
-        except Exception:
+        except Exception as exc:
             log.exception("Error inesperado analizando una captura")
+            motivos.append(str(exc) or exc.__class__.__name__)
             fallidas += 1
 
     if not analisis:
+        # El motivo real vivía solo en el log del servidor, así que desde
+        # el celular era imposible distinguir "la imagen está borrosa" de
+        # "se cayó la API" o "falta la clave".
+        detalle = f"\n\n_Motivo: {escape_md(motivos[0])}_" if motivos else ""
         await processing_msg.edit_text(
-            "⚠️ No pude leer ninguna de las capturas. Probá con imágenes más nítidas."
+            "⚠️ No pude leer ninguna de las capturas. Probá con imágenes "
+            "más nítidas, o recortá el cupón para que el texto salga más "
+            "grande." + detalle,
+            parse_mode="Markdown",
         )
         return
 

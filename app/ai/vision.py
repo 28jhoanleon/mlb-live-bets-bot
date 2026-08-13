@@ -125,7 +125,20 @@ Formato:
   ]
 }
 
-- "bets": una entrada por cada ticket visible en la imagen.
+- "bets": una entrada por cada APUESTA, no por cada bloque visual.
+
+  CUIDADO con esto, es la confusión más común: el cupón de la casa
+  muestra varios bloques apilados ("Multi apuesta del mismo partido"),
+  cada uno con su propia cuota y su partido. Si están dentro del MISMO
+  cupón y NO tienen cada uno su propio importe apostado ni su propio
+  "Pago" o "Ganancia", son PARTES DE UNA SOLA APUESTA combinada: las
+  cuotas se multiplican entre sí. En ese caso devolvé UNA sola entrada
+  en "bets" con TODAS las selecciones juntas en "legs", y usá
+  "group_odds" para la cuota de cada bloque.
+
+  Son apuestas SEPARADAS solo si cada una muestra su propio monto
+  apostado, su propio pago, o su propio estado (Ganada / Perdida / En
+  vivo). Ante la duda, tratalas como UNA sola.
 - "total_odds": la cuota total de ese ticket (el número grande arriba a
   la derecha de la tarjeta). null si no se ve.
 - "odds" dentro de cada leg: la cuota individual, o null si la casa solo
