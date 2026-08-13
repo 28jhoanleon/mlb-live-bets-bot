@@ -20,6 +20,7 @@ from app.analysis.probability import (
     ProbabilityError,
     estimate_leg_detail,
     estimate_leg_probability,
+    estimate_team_detail,
     estimate_team_probability,
     mejor_alternativa,
     sugerir_lineas,
@@ -36,7 +37,7 @@ from app.mlb.estados import TERMINADO as _TERMINADO
 from app.mlb.players import get_hitting_split_vs_hand, get_season_hitting_stats, search_player
 from app.analysis.probability import LegEstimate
 from app.mlb.schedule import buscar_partido
-from app.utils.equipos import logo_equipo, nombre_corto, partido_corto
+from app.utils.equipos import equipos_en_texto, logo_equipo, nombre_corto, partido_corto
 from app.utils.logger import get_logger
 from app.utils.market_labels import nombre_stake_texto
 from app.utils.progress_bar import target_needed
@@ -51,10 +52,26 @@ TOLERANCIA_TICKET_TERMINADO = timedelta(hours=3)
 
 
 def _equipos_de(match: str) -> tuple[str, str]:
-    for sep in (" @ ", " vs ", " - "):
+    """Separa el cruce en (visitante, local).
+
+    Primero se buscan equipos MLB conocidos dentro del texto: es lo único
+    que aguanta las variantes que escribe la IA según la captura
+    ("Dodgers @ Royals", "... vs. ...", "... - ..."). Partir por separador
+    quedó como respaldo, porque con un separador inesperado devolvía UN
+    solo texto gigante que no matcheaba ningún partido -- y el grupo se
+    quedaba sin horario ni datos en vivo, como si el partido no existiera.
+    """
+    equipos = equipos_en_texto(match)
+    if len(equipos) >= 2:
+        return equipos[0], equipos[1]
+
+    for sep in (" @ ", " vs. ", " vs ", " - ", " at "):
         if sep in match:
             a, b = match.split(sep, 1)
             return a.strip(), b.strip()
+
+    if len(equipos) == 1:
+        return equipos[0], ""
     return match.strip(), ""
 
 
@@ -531,7 +548,14 @@ def detalle_leg(player: str, market: str, line: str) -> dict[str, Any]:
     """Desglose partido-por-partido de una leg puntual. Es lo que pide
     el botón de 'profundizar' en cada leg: no el resumen ('90% en sus
     últimos 10'), sino el detalle de cada uno de esos partidos."""
-    detalle = estimate_leg_detail(player, market, line)
+    # Si el "jugador" es en realidad un equipo, hay que usar el gameLog
+    # del equipo: buscarlo en el roster de jugadores no lo encuentra.
+    from app.utils.equipos import id_equipo
+
+    if id_equipo(player):
+        detalle = estimate_team_detail(player, market, line)
+    else:
+        detalle = estimate_leg_detail(player, market, line)
     return {
         "player": detalle.player,
         "market": nombre_stake_texto(market, detalle.is_pitcher),

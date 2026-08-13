@@ -125,3 +125,55 @@ class TestApuestasViejasSinEquipo:
         assert salida["state"] == "unknown"
         # No inventa cuál de los dos equipos del partido es
         assert "Rockies" not in salida["note"] and "Royals" not in salida["note"]
+
+
+class TestDetalleDeEquipo:
+    """Bug real: en la línea principal el mercado de equipo se estimaba
+    bien, pero al abrir el botón "+" respondía "No encontré a 'Texas
+    Rangers' en el roster actual de MLB". El detalle llamaba siempre a la
+    versión de jugador, que busca un JUGADOR con ese nombre."""
+
+    def _payload(self):
+        """Respuesta cruda de la MLB API, como la recibe team_stats."""
+        valores = [4, 3, 5, 1, 4, 3, 6, 2, 4, 3]
+        return {"stats": [{"splits": [
+            {"date": f"2026-08-{i+1:02d}", "stat": {"baseOnBalls": v}}
+            for i, v in enumerate(valores)
+        ]}]}
+
+    def test_el_boton_mas_trae_el_detalle_del_equipo(self):
+        from app.web.service import detalle_leg
+
+        with patch.object(team_stats, "get", return_value=self._payload()):
+            salida = detalle_leg(
+                "Texas Rangers", "Equipo, bases por bolas del bateador", "Over 3.5"
+            )
+
+        assert salida["player"] == "Texas Rangers"
+        assert len(salida["games"]) == 10
+        assert salida["games"][0]["date"] == "2026-08-01"
+
+    def test_las_alternativas_de_linea_tambien_andan_para_equipos(self):
+        from app.analysis.probability import sugerir_lineas
+
+        with patch.object(team_stats, "get", return_value=self._payload()):
+            opciones = sugerir_lineas(
+                "Texas Rangers", "Equipo, bases por bolas del bateador", "Over 3.5"
+            )
+
+        assert opciones, "no calculó líneas alternativas para el equipo"
+        assert any(o.es_la_apostada for o in opciones)
+
+    def test_un_jugador_sigue_yendo_por_el_camino_de_jugador(self):
+        """No romper lo que ya andaba: un nombre que no es equipo tiene
+        que seguir buscándose en el roster."""
+        from app.web.service import detalle_leg
+
+        with patch("app.utils.equipos.id_equipo", return_value=None), \
+             patch("app.analysis.probability.search_player",
+                   return_value={"id": 1, "full_name": "Aaron Judge", "position": "Hitter"}), \
+             patch("app.analysis.probability.get_recent_hitting_games",
+                   return_value=[{"date": "2026-08-01", "hits": 2} for _ in range(10)]):
+            salida = detalle_leg("Aaron Judge", "batter_hits", "Over 0.5")
+
+        assert salida["player"] == "Aaron Judge"

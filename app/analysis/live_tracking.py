@@ -26,6 +26,7 @@ from app.analysis.probability import (
     _parse_line,
 )
 from app.mlb.estados import TERMINADO as _TERMINADO
+from app.utils.equipos import equipos_en_texto
 from app.mlb.live import find_live_game_by_teams, get_live_boxscore, get_live_game
 from app.mlb.pitchers import get_recent_pitching_games
 from app.mlb.players import get_recent_hitting_games, search_player
@@ -58,10 +59,24 @@ class LiveLegStatus:
 
 
 def _split_match(match_text: str) -> tuple[str, str]:
-    for sep in (" vs ", " @ ", " - "):
+    """Separa el cruce en (visitante, local).
+
+    Misma lógica que _equipos_de en la web: se buscan equipos MLB
+    conocidos dentro del texto antes de intentar partir por separador,
+    porque la IA escribe el cruce distinto según la captura y un
+    separador inesperado dejaba al partido sin encontrar.
+    """
+    equipos = equipos_en_texto(match_text)
+    if len(equipos) >= 2:
+        return equipos[0], equipos[1]
+
+    for sep in (" vs. ", " vs ", " @ ", " - ", " at "):
         if sep in match_text:
             a, b = match_text.split(sep, 1)
             return a.strip(), b.strip()
+
+    if len(equipos) == 1:
+        return equipos[0], ""
     return match_text.strip(), ""
 
 

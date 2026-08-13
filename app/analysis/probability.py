@@ -436,9 +436,28 @@ def sugerir_lineas(
     si la línea que tomaste estaba floja respecto de lo que el jugador
     viene haciendo, NO para prometer que va a pasar.
     """
-    _player, side, threshold, _is_pitcher, stat_fields, games = _cargar_jugador_y_partidos(
-        player_name, market_text, line_text, sample
-    )
+    # El mismo botón "+" se usa en mercados de EQUIPO, donde el "jugador"
+    # es en realidad el nombre del equipo. Buscarlo en el roster no lo
+    # encuentra, así que hay que ir al gameLog del equipo.
+    from app.utils.equipos import id_equipo
+
+    if id_equipo(player_name):
+        from app.mlb.team_stats import (
+            campos_de_mercado_equipo,
+            es_mercado_de_pitcheo,
+            get_recent_team_games,
+        )
+
+        side, threshold = _parse_line(line_text)
+        stat_fields = campos_de_mercado_equipo(market_text)
+        if not stat_fields:
+            raise ProbabilityError(f"Mercado de equipo no reconocido: '{market_text}'")
+        grupo = "pitching" if es_mercado_de_pitcheo(market_text) else "hitting"
+        games = get_recent_team_games(id_equipo(player_name), last_n=sample, group=grupo)
+    else:
+        _player, side, threshold, _is_pitcher, stat_fields, games = _cargar_jugador_y_partidos(
+            player_name, market_text, line_text, sample
+        )
 
     valores = [sum(g.get(f, 0) for f in stat_fields) for g in games]
     if not valores:
@@ -515,7 +534,7 @@ def estimate_team_leg(
     BATEANDO (los que se comió) y los de su PITCHEO (los que repartió)
     son mercados distintos. Se decide por el texto del mercado.
     """
-    from app.mlb.equipos_stats import get_recent_team_games
+    from app.mlb.team_stats import get_recent_team_games
     from app.utils.equipos import id_equipo
 
     if not team_name or not line_text:
@@ -628,4 +647,56 @@ def estimate_team_probability(
         probability_pct=probabilidad,
         sample_size=len(valores),
         avg_value=round(sum(valores) / len(valores), 2),
+    )
+
+
+def estimate_team_detail(team_name: str, market_text: str, line_text: str) -> LegDetail:
+    """Desglose partido por partido de un mercado de EQUIPO.
+
+    El equivalente de estimate_leg_detail pero para equipos: el botón
+    "+" de la web llamaba siempre a la versión de jugador, así que en un
+    mercado de equipo respondía "no encontré a 'Texas Rangers' en el
+    roster" -- buscaba un jugador con el nombre del equipo.
+    """
+    from app.mlb.team_stats import (
+        campos_de_mercado_equipo,
+        es_mercado_de_pitcheo,
+        get_recent_team_games,
+    )
+    from app.utils.equipos import id_equipo
+
+    team_id = id_equipo(team_name)
+    if not team_id:
+        raise ProbabilityError(f"No reconozco al equipo '{team_name}'.")
+
+    side, threshold = _parse_line(line_text)
+    campos = campos_de_mercado_equipo(market_text)
+    if not campos:
+        raise ProbabilityError(f"Mercado de equipo no reconocido: '{market_text}'")
+    es_pitcheo = es_mercado_de_pitcheo(market_text)
+    juegos = get_recent_team_games(
+        team_id, last_n=_DEFAULT_SAMPLE,
+        group="pitching" if es_pitcheo else "hitting",
+    )
+    if not juegos:
+        raise ProbabilityError(f"No hay partidos recientes de {team_name}.")
+
+    entradas = []
+    for g in juegos:
+        valor = sum(g.get(c, 0) for c in campos)
+        cumplio = valor > threshold if side == "Over" else valor < threshold
+        entradas.append(GameLogEntry(date=g.get("date"), value=valor, hit=cumplio))
+
+    aciertos = sum(1 for e in entradas if e.hit)
+    probabilidad = round((aciertos + 1) / (len(entradas) + 2) * 100, 1)
+
+    return LegDetail(
+        player=team_name,
+        market=market_text,
+        side=side,
+        threshold=threshold,
+        probability_pct=probabilidad,
+        avg_value=round(sum(e.value for e in entradas) / len(entradas), 2),
+        is_pitcher=es_pitcheo,
+        games=entradas,
     )

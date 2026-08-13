@@ -216,3 +216,40 @@ def logo_equipo(nombre: str | None) -> str | None:
     para que la interfaz simplemente no muestre imagen en vez de romperse."""
     tid = id_equipo(nombre)
     return f"https://www.mlbstatic.com/team-logos/{tid}.svg" if tid else None
+
+
+def equipos_en_texto(texto: str | None) -> list[str]:
+    """Encuentra los equipos MLB mencionados en un texto, en el orden en
+    que aparecen.
+
+    Más robusto que partir por separador: la IA de visión escribe el
+    cruce de formas distintas según la captura ("Dodgers @ Royals",
+    "Los Angeles Dodgers vs. Kansas City Royals", "LAD - KC"), y con un
+    separador inesperado el split devolvía UN solo texto gigante que no
+    matcheaba contra ningún partido del calendario. Resultado: el grupo
+    se quedaba sin horario ni estado en vivo, como si el partido no
+    existiera.
+    """
+    if not texto:
+        return []
+
+    bajo = texto.lower()
+    encontrados: list[tuple[int, str]] = []
+
+    for completo in _IDS_MLB:
+        # Se busca primero el nombre completo y después el apodo, y se
+        # guarda la POSICIÓN para poder devolverlos en orden (el primero
+        # es el visitante en "A @ B").
+        pos = bajo.find(completo.lower())
+        if pos == -1:
+            pos = bajo.find(nombre_corto(completo).lower())
+        if pos != -1:
+            encontrados.append((pos, completo))
+
+    encontrados.sort()
+    # Sin duplicados, conservando el orden de aparición.
+    salida: list[str] = []
+    for _, nombre in encontrados:
+        if nombre not in salida:
+            salida.append(nombre)
+    return salida
