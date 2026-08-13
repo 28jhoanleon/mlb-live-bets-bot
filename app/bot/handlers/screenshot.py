@@ -41,6 +41,11 @@ from app.utils.telegram_helpers import edit_then_send_rest, escape_md
 
 log = get_logger(__name__)
 
+# Pies de foto que marcan la captura como BORRADOR: se analiza pero no
+# se guarda ni se sigue en vivo. Sirve para evaluar una combinada
+# armada en la casa de apuestas antes de jugarla.
+_PALABRAS_BORRADOR = {"probar", "borrador", "simular", "test", "prueba"}
+
 # Mensaje de "analizando" por álbum, para no repetirlo por cada foto
 _albumes_avisados: dict = {}
 
@@ -297,7 +302,8 @@ async def _format_full_analysis(analysis: dict) -> str:
 
 
 async def _procesar_y_responder(
-    imagenes: list[bytes], processing_msg, chat_id: int, etiqueta: str | None = None, acumular: bool = True
+    imagenes: list[bytes], processing_msg, chat_id: int, etiqueta: str | None = None,
+    acumular: bool = True, guardar: bool = True
 ) -> None:
     """Analiza las capturas y responde.
 
@@ -353,14 +359,28 @@ async def _procesar_y_responder(
 
     # Guardamos en SQLite (sobrevive reinicios) para que /refresh pueda
     # recalcular sin las fotos, y para el historial.
+    # Un borrador no se guarda: no es una apuesta que haya que seguir.
+    # Un borrador SÍ se guarda, pero marcado: así se puede ver en la web
+    # -que es más cómoda para comparar- sin que se mezcle con las
+    # apuestas de verdad ni ensucie el historial o la calibración.
+    if not guardar:
+        for t in analysis.get("bets", []):
+            t["borrador"] = True
+
     save_active_bet(chat_id, analysis)
-    try:
-        log_bet_analysis(chat_id, analysis)
-    except Exception:
-        log.exception("No pude guardar el historial (no bloquea la respuesta)")
+    if guardar:
+        try:
+            log_bet_analysis(chat_id, analysis)
+        except Exception:
+            log.exception("No pude guardar el historial (no bloquea la respuesta)")
 
     try:
         result_text = await _format_full_analysis(analysis)
+        if not guardar:
+            result_text += (
+                "\n\n_Guardada como borrador: la ves en la web marcada como tal. "
+                "Desde ahí podés confirmarla si la jugás, o descartarla._"
+            )
     except Exception:
         log.exception("Error inesperado calculando probabilidades")
         result_text = "⚠️ Detecté la apuesta pero hubo un error calculando probabilidades."
@@ -417,15 +437,31 @@ async def handle_bet_screenshot(update: Update, context: ContextTypes.DEFAULT_TY
     # encabezado de la tarjeta, así que ni la IA ni nosotros podemos saber
     # a qué apuesta pertenecen. Escribiendo la misma etiqueta en todas
     # (ej. "1"), quedan agrupadas sin depender de que el modelo acierte.
-    etiqueta = (update.message.caption or "").strip()[:20] or None
+    pie = (update.message.caption or "").strip()
+
+    # Un talón armado en Stake PERO NO APOSTADO se puede analizar igual:
+    # alcanza con escribir "probar" en el pie de foto. No se guarda como
+    # apuesta activa ni se trackea -- solo devuelve el análisis. Así se
+    # puede evaluar una combinada antes de poner plata.
+    es_borrador = pie.lower() in _PALABRAS_BORRADOR
+
+    etiqueta = None if es_borrador else (pie[:20] or None)
 
     # Sin etiqueta las capturas igual se acumulan solas: si son de otro
     # partido quedan como ticket aparte, y si son del mismo se fusionan
     # sin duplicar. Para arrancar de cero está /nueva.
     if not media_group_id:
-        aviso = f"🔍 Analizando captura de la apuesta *{etiqueta}*..." if etiqueta else "🔍 Analizando la captura..."
+        if es_borrador:
+            aviso = "🔍 Analizando sin guardar (borrador)..."
+        elif etiqueta:
+            aviso = f"🔍 Analizando captura de la apuesta *{etiqueta}*..."
+        else:
+            aviso = "🔍 Analizando la captura..."
         processing_msg = await update.message.reply_text(aviso, parse_mode="Markdown")
-        await _procesar_y_responder([image_bytes], processing_msg, chat_id, etiqueta=etiqueta)
+        await _procesar_y_responder(
+            [image_bytes], processing_msg, chat_id,
+            etiqueta=etiqueta, guardar=not es_borrador,
+        )
         return
 
     # Álbum: las fotos llegan en mensajes separados. Acumulamos y
@@ -475,6 +511,11 @@ async def refresh_last_bet(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     try:
         result_text = await _format_full_analysis(analysis)
+        if not guardar:
+            result_text += (
+                "\n\n_Guardada como borrador: la ves en la web marcada como tal. "
+                "Desde ahí podés confirmarla si la jugás, o descartarla._"
+            )
     except Exception:
         log.exception("Error inesperado actualizando análisis")
         await processing_msg.edit_text("⚠️ Hubo un error actualizando el análisis.")

@@ -11,7 +11,7 @@ ESPERADOS = {
     "start", "help", "miid", "games", "today", "live", "props",
     "strikeouts", "hits", "hr", "analyze", "compare", "value",
     "sonadora", "sonadoras", "combos", "refresh", "nueva",
-    "historial", "alertas", "noalertas", "calibracion", "statcast", "limpiar", "borrar", "mejorar",
+    "historial", "calibracion", "limpiar", "borrar", "mejorar",
 }
 
 

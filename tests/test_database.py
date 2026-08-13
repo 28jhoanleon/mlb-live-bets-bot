@@ -81,14 +81,6 @@ def test_bet_history_marca_combinadas(db_module):
     assert "+1" in fila["match_summary"]
 
 
-def test_alert_subscription_toggle(db_module):
-    assert db_module.is_subscribed(333) is False
-    db_module.subscribe_alerts(333)
-    assert db_module.is_subscribed(333) is True
-    assert 333 in db_module.get_subscribed_chats()
-    db_module.unsubscribe_alerts(333)
-    assert db_module.is_subscribed(333) is False
-
 
 def test_alert_dedup(db_module):
     assert db_module.has_seen_alert("key-1") is False

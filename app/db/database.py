@@ -6,7 +6,6 @@ Tablas:
   bet_history       -> historial de todo lo analizado (para auditar
                         después qué picks funcionaron)
   alert_subscribers -> chats suscriptos a alertas automáticas de +EV
-  seen_value_alerts -> dedup para no mandar la misma alerta 2 veces
 
 DATABASE_URL soporta 'sqlite:///archivo.db' — parseamos el path de ahí.
 Si algún día se migra a Postgres, esta es la capa que hay que
@@ -184,25 +183,7 @@ def get_bet_history(chat_id: int, limit: int = 10) -> list[dict[str, Any]]:
 
 # ---------- alert_subscribers ----------
 
-def subscribe_alerts(chat_id: int) -> None:
-    with _connection() as conn:
-        conn.execute(
-            "INSERT OR IGNORE INTO alert_subscribers (chat_id, subscribed_at) VALUES (?, ?)",
-            (chat_id, datetime.now(timezone.utc).isoformat()),
-        )
 
-
-def unsubscribe_alerts(chat_id: int) -> None:
-    with _connection() as conn:
-        conn.execute("DELETE FROM alert_subscribers WHERE chat_id = ?", (chat_id,))
-
-
-def is_subscribed(chat_id: int) -> bool:
-    with _connection() as conn:
-        row = conn.execute(
-            "SELECT 1 FROM alert_subscribers WHERE chat_id = ?", (chat_id,)
-        ).fetchone()
-    return row is not None
 
 
 def get_subscribed_chats() -> list[int]:
@@ -228,15 +209,6 @@ def mark_alert_seen(alert_key: str) -> None:
             (alert_key, datetime.now(timezone.utc).isoformat()),
         )
 
-
-def prune_old_alerts(older_than_hours: int = 12) -> None:
-    """Limpia alertas vistas hace rato, para no acumular la tabla al
-    infinito (los partidos de un día ya no importan al día siguiente)."""
-    with _connection() as conn:
-        conn.execute(
-            "DELETE FROM seen_value_alerts WHERE seen_at < datetime('now', ?)",
-            (f"-{older_than_hours} hours",),
-        )
 
 
 def clear_active_bet(chat_id: int) -> None:
@@ -488,3 +460,47 @@ def borrar_ticket(chat_id: int, indice: int) -> str | None:
     else:
         clear_active_bet(chat_id)
     return descripcion
+
+
+def chats_con_apuesta_activa() -> list[int]:
+    """Chats que tienen una apuesta guardada.
+
+    Lo usa el job que registra legs resueltas para calibración, que
+    necesita recorrerlos sin depender de que alguien abra la web."""
+    with _connection() as conn:
+        filas = conn.execute("SELECT DISTINCT chat_id FROM active_bets").fetchall()
+    return [f["chat_id"] for f in filas]
+
+
+def _tickets_de(chat_id: int) -> tuple[dict | None, list[dict]]:
+    actual = get_active_bet(chat_id)
+    return actual, (actual or {}).get("bets", [])
+
+
+def confirmar_borrador(chat_id: int, ticket_id: str, calcular_id) -> bool:
+    """Un borrador pasa a ser apuesta de verdad: se le saca la marca.
+
+    `calcular_id` se recibe como parámetro para no importar la capa web
+    desde la base (evita un ciclo de imports)."""
+    actual, tickets = _tickets_de(chat_id)
+    for t in tickets:
+        if calcular_id(t, t.get("legs", [])) == ticket_id and t.get("borrador"):
+            t.pop("borrador", None)
+            save_active_bet(chat_id, actual)
+            return True
+    return False
+
+
+def descartar_ticket(chat_id: int, ticket_id: str, calcular_id) -> bool:
+    """Saca un ticket concreto de la apuesta activa, por su id."""
+    actual, tickets = _tickets_de(chat_id)
+    for i, t in enumerate(tickets):
+        if calcular_id(t, t.get("legs", [])) == ticket_id:
+            tickets.pop(i)
+            if tickets:
+                actual["bets"] = tickets
+                save_active_bet(chat_id, actual)
+            else:
+                clear_active_bet(chat_id)
+            return True
+    return False

@@ -157,6 +157,21 @@ body{
 .ticket.is-dead{opacity:.55}
 .ticket.is-dead .tally b{color:var(--clay)}
 .final.dead{color:var(--clay);border-color:var(--clay)}
+.final.draft{color:var(--amber);border-color:var(--amber)}
+/* Barra del borrador: se decide acá mismo si se jugó o se descarta. */
+.draftbar{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:8px 15px;font-size:12px;color:var(--amber);
+  background:rgba(242,169,59,.07);border-bottom:1px solid var(--line);
+}
+.draftbtns{display:flex;gap:6px;flex:none}
+.dbtn{
+  border:1px solid var(--line);background:transparent;color:var(--muted);
+  font-size:11.5px;padding:3px 9px;border-radius:5px;cursor:pointer;
+}
+.dbtn.ok{color:var(--green);border-color:var(--green)}
+.dbtn.no{color:var(--muted)}
+.dbtn:disabled{opacity:.5;cursor:default}
 
 /* Cuando un ticket tiene varios partidos, cada uno queda indentado y con
    un borde lateral -señal de que son PIEZAS de una sola apuesta, no
@@ -358,6 +373,7 @@ body{
   font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;
 }
 .detalle__fila.hit{color:var(--green)}
+.turnos{margin-top:4px;font-size:11.5px;color:var(--muted);letter-spacing:.01em}
 .sug{
   margin-top:5px;font-size:12px;color:var(--amber);
   opacity:.95;line-height:1.35;
@@ -432,6 +448,7 @@ function leg(l){
         <div>
           ${l.note ? `<div class="note ${notaClase}">${esc(l.note)}</div>` : ''}
           ${l.sugerencia ? `<div class="sug">💡 ${esc(l.sugerencia)}</div>` : ''}
+          ${l.turnos ? `<div class="turnos">⚾ ${esc(l.turnos)}</div>` : ''}
         </div>
         <button class="masbtn" data-detail-url="/api/leg-detail?${esc(params)}"
                 onclick="toggleDetalle(this)" aria-label="Ver más de ${esc(l.player)}">+</button>
@@ -561,15 +578,42 @@ function ticket(t, i){
         </div>
         <div class="meta">
           ${cuota} · ${esc(grupos.length)} ${grupos.length === 1 ? 'partido' : 'partidos'}
+          ${t.borrador ? '<span class="final draft">Borrador</span>' : ''}
           ${t.terminado ? '<span class="final">Terminada</span>'
             : (t.caida ? '<span class="final dead">Ya no puede darse</span>' : '')}
           <span class="chevron">⌄</span>
         </div>
       </div>
+      ${t.borrador ? `
+        <div class="draftbar">
+          <span>Todavía no la jugaste</span>
+          <span class="draftbtns">
+            <button class="dbtn ok" onclick="accionTicket('${esc(t.id)}','jugada',this)">La jugué</button>
+            <button class="dbtn no" onclick="accionTicket('${esc(t.id)}','descartar',this)">Descartar</button>
+          </span>
+        </div>` : ''}
       <div class="ticket__body ${grupos.length > 1 ? 'multi' : ''}">
         ${grupos.map((g, idx) => grupo(g, idx, grupos.length)).join('')}
       </div>
     </section>`;
+}
+
+async function accionTicket(id, accion, btn){
+  if (accion === 'descartar' && !confirm('¿Descartar este borrador?')) return;
+  btn.disabled = true;
+  btn.textContent = '...';
+  try {
+    const r = await fetch(
+      `/api/ticket-accion?k=${encodeURIComponent(KEY)}&id=${encodeURIComponent(id)}&accion=${accion}`,
+      {cache: 'no-store'}
+    );
+    if (!r.ok) throw new Error('error');
+    await cargar();
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = accion === 'jugada' ? 'La jugué' : 'Descartar';
+    alert('No se pudo aplicar el cambio.');
+  }
 }
 
 function toggleTicket(el){

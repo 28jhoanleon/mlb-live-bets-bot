@@ -53,7 +53,8 @@ class TestEstimarEquipo:
         ]}]}):
             est = estimate_team_probability("Kansas City Royals",
                                             "bases por bolas del bateador", "Over 2.5")
-        assert est.team == "Kansas City Royals"
+        # Devuelve LegEstimate unificado: el equipo va en `player`
+        assert est.player == "Kansas City Royals"
         assert est.sample_size == 10
         # Con suavizado: (8+1)/(10+2) = 75%, no 80%
         assert est.probability_pct == 75.0

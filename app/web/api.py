@@ -100,6 +100,40 @@ async def leg_detail(request: Request) -> JSONResponse:
         return JSONResponse({"detail": "No pude traer el detalle de este jugador"}, status_code=500)
 
 
+async def ticket_accion(request: Request) -> JSONResponse:
+    """Confirmar o descartar un ticket desde la web.
+
+    Es lo que hace útil ver los borradores acá: se comparan cómodo y se
+    decide en el momento, sin volver a Telegram."""
+    if not _clave_ok(request.query_params.get("k")):
+        return JSONResponse({"detail": "Clave incorrecta"}, status_code=401)
+
+    chat_id = _chat_id()
+    if chat_id is None:
+        return JSONResponse({"detail": "Falta OWNER_CHAT_ID"}, status_code=500)
+
+    ticket_id = request.query_params.get("id", "")
+    accion = request.query_params.get("accion", "")
+    if not ticket_id or accion not in ("jugada", "descartar"):
+        return JSONResponse({"detail": "Pedido inválido"}, status_code=400)
+
+    from app.db.database import confirmar_borrador, descartar_ticket
+    from app.web.service import _ticket_id as calcular_id
+
+    try:
+        if accion == "jugada":
+            ok = await asyncio.to_thread(confirmar_borrador, chat_id, ticket_id, calcular_id)
+        else:
+            ok = await asyncio.to_thread(descartar_ticket, chat_id, ticket_id, calcular_id)
+    except Exception:
+        log.exception("Error aplicando la acción sobre el ticket")
+        return JSONResponse({"detail": "No pude aplicar el cambio"}, status_code=500)
+
+    if not ok:
+        return JSONResponse({"detail": "No encontré esa apuesta"}, status_code=404)
+    return JSONResponse({"ok": True})
+
+
 async def index(request: Request) -> FileResponse:
     return FileResponse(ESTATICOS / "index.html")
 
@@ -119,5 +153,6 @@ app = Starlette(
         Route("/health", health),
         Route("/api/bets", bets),
         Route("/api/leg-detail", leg_detail),
+        Route("/api/ticket-accion", ticket_accion),
     ]
 )

@@ -26,6 +26,7 @@ from app.analysis.probability import (
     sugerir_lineas,
 )
 from app.analysis.tickets import normalize
+from app.analysis.turnos import describir_turnos, turnos_restantes
 from app.db.database import (
     get_active_bet,
     marcar_terminado_si_hace_falta,
@@ -96,6 +97,34 @@ def _pct(actual: float, objetivo: float, cumplida: bool) -> float:
     return round(max(0.0, min(actual / objetivo, 1.0)) * 100, 1)
 
 
+def _turnos_de(leg: dict, status, boxscore: dict, live_state: dict) -> str:
+    """Cuántos turnos al bate le quedan al jugador.
+
+    Es lo que convierte "necesita 1 hit" en información accionable: con
+    3 turnos por delante la leg está viva, con medio turno en la novena
+    está prácticamente liquidada.
+
+    Solo aplica a bateadores con la leg sin cumplir todavía: para un
+    pitcher los "turnos" no significan nada, y una leg ya asegurada no
+    necesita más oportunidades."""
+    if status.already_hit or getattr(status, "perdida", False):
+        return ""
+
+    datos = boxscore.get(status.player) or {}
+    orden = datos.get("batting_order")
+    if not orden or datos.get("is_current_pitcher"):
+        return ""
+
+    turnos = turnos_restantes(
+        orden,
+        live_state.get("inning"),
+        live_state.get("inning_state"),
+        es_equipo_visitante=(datos.get("team_side") == "away"),
+        outs=live_state.get("outs"),
+    )
+    return describir_turnos(turnos)
+
+
 def _leg_en_vivo(leg: dict, boxscore: dict, live_state: dict) -> dict[str, Any] | None:
     try:
         status = track_leg_live(leg, boxscore, live_state)
@@ -136,6 +165,7 @@ def _leg_en_vivo(leg: dict, boxscore: dict, live_state: dict) -> dict[str, Any] 
         "pct": _pct(status.current_value, objetivo, status.already_hit),
         "state": estado,
         "note": nota,
+        "turnos": _turnos_de(leg, status, boxscore, live_state),
         "player_status": status.active_status,
         "live": True,
     }
@@ -511,7 +541,9 @@ def estado_apuestas(chat_id: int) -> dict[str, Any]:
         terminado = bool(grupos) and all(g["terminado"] for g in grupos)
         ticket_id = _ticket_id(ticket, legs_raw)
 
-        if terminado:
+        # Los borradores no van a calibración: no son apuestas reales y
+        # medirían el modelo contra decisiones que nunca se tomaron.
+        if terminado and not ticket.get("borrador"):
             _registrar_para_calibracion(chat_id, ticket_id, grupos, legs_raw)
             desde_iso = marcar_terminado_si_hace_falta(chat_id, ticket_id)
             desde = datetime.fromisoformat(desde_iso)
@@ -531,6 +563,8 @@ def estado_apuestas(chat_id: int) -> dict[str, Any]:
             "total": total,
             "live": any(g["live"] for g in grupos),
             "terminado": terminado,
+            "borrador": bool(ticket.get("borrador")),
+            "id": ticket_id,
             # Una sola leg perdida (o prácticamente decidida en contra,
             # como un pitcher que ya salió del montículo sin cumplir) ya
             # rompe toda la combinada: no hace falta seguir mirándola

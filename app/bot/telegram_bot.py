@@ -3,7 +3,6 @@ de todos los handlers. main.py solo llama a build_app().run_polling()."""
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 from app.bot.handlers import (
-    alerts,
     analyze,
     borrar,
     calibracion,
@@ -19,17 +18,19 @@ from app.bot.handlers import (
     screenshot,
     sonadora,
     start,
-    statcast,
     value,
 )
 from app.config import settings
-from app.db.database import init_db
-from app.jobs.value_alerts import check_value_alerts_job
+from app.db.database import init_db, prune_tickets_terminados
+from app.jobs.registrar_resueltas import registrar_resueltas_job
 from app.utils.logger import get_logger
 
 log = get_logger(__name__)
 
-_ALERT_CHECK_INTERVAL_SECONDS = 300  # cada 5 minutos
+# Cada cuánto se recalculan las apuestas guardadas para registrar las
+# legs ya resueltas (lo que alimenta /calibracion). No hace falta que
+# sea frecuente: los partidos duran horas.
+_REGISTRO_INTERVAL_SECONDS = 900  # cada 15 minutos
 
 
 async def _manejar_error(update, context) -> None:
@@ -50,6 +51,12 @@ async def _manejar_error(update, context) -> None:
 def build_app() -> Application:
     settings.validate()
     init_db()
+    # Limpieza de arranque: la tabla de tickets terminados crece sola con
+    # cada apuesta que se resuelve, y nadie la vaciaba nunca.
+    try:
+        prune_tickets_terminados()
+    except Exception:
+        log.warning("No pude limpiar registros viejos", exc_info=True)
     app = Application.builder().token(settings.bot_token).build()
 
     app.add_handler(CommandHandler("start", start.start))
@@ -74,21 +81,18 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("borrar", borrar.borrar_cmd))
     app.add_handler(CommandHandler("limpiar", limpiar.limpiar_cmd))
     app.add_handler(CommandHandler("calibracion", calibracion.calibracion_cmd))
-    app.add_handler(CommandHandler("statcast", statcast.statcast_cmd))
     app.add_handler(CommandHandler("historial", history.historial))
-    app.add_handler(CommandHandler("alertas", alerts.alertas_on))
-    app.add_handler(CommandHandler("noalertas", alerts.alertas_off))
     app.add_handler(MessageHandler(filters.PHOTO, screenshot.handle_bet_screenshot))
 
     if app.job_queue is not None:
         app.job_queue.run_repeating(
-            check_value_alerts_job, interval=_ALERT_CHECK_INTERVAL_SECONDS, first=15
+            registrar_resueltas_job, interval=_REGISTRO_INTERVAL_SECONDS, first=60
         )
-        log.info("Job de alertas automáticas programado cada %ss", _ALERT_CHECK_INTERVAL_SECONDS)
+        log.info("Job de registro para calibración programado cada %ss", _REGISTRO_INTERVAL_SECONDS)
     else:
         log.warning(
-            "job_queue no disponible (falta 'apscheduler') — las alertas automáticas de /alertas "
-            "no van a funcionar hasta instalar la dependencia. Ver requirements.txt."
+            "job_queue no disponible (falta 'apscheduler') — las legs resueltas "
+            "no se van a registrar solas y /calibracion se va a quedar vacío."
         )
 
     comandos = sorted({
