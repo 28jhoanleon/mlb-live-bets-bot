@@ -64,6 +64,35 @@ def confidence_stars(edge_pct: float) -> str:
 # una respuesta parcial a un comando que se queda colgado sin decir nada.
 PRESUPUESTO_SEGUNDOS = 90
 
+# Línea mínima que la casa realmente ofrece para cada mercado de pitcheo.
+# Stake (y las casas en general) no publican "Golpes Permitidos Over 0.5"
+# ni "Strikeouts Over 0.5" para un abridor: esas líneas arrancan en 1.5 o
+# 2.5. Sugerirlas era inútil aunque el cálculo estuviera bien -- no se
+# pueden jugar. Además son tan fáciles que dan ~96% y disparan ventajas
+# falsas enormes.
+_LINEA_MINIMA = {
+    "pitcher_strikeouts": 1.5,
+    "pitcher_hits_allowed": 2.5,
+    "pitcher_earned_runs": 1.5,
+    "pitcher_outs": 8.5,
+    "pitcher_walks": 1.5,
+}
+
+# Techo de ventaja creíble. Un edge de +200% contra una casa real no
+# existe: si aparece, es un problema de datos (línea inexistente, precio
+# simbólico, mercado mal interpretado), no una oportunidad. Descartarlo
+# es más seguro que mostrarlo -- todos los bugs de esta semana se
+# manifestaron como ventajas absurdas.
+_EDGE_MAXIMO_CREIBLE = 40.0
+
+
+def _linea_existe(market_key: str, punto: float | None) -> bool:
+    """¿La casa ofrece de verdad esta línea para este mercado?"""
+    if punto is None:
+        return True
+    minimo = _LINEA_MINIMA.get(market_key)
+    return minimo is None or punto >= minimo
+
 
 def find_daily_picks(
     max_events: int = 12,
@@ -192,6 +221,16 @@ def find_daily_picks(
                     market_prob = implied_probability(float(price)) * 100
                     edge = estimate.probability_pct - market_prob
                     if edge < min_edge_pct:
+                        continue
+
+                    if not _linea_existe(market_label, point):
+                        continue
+
+                    if edge > _EDGE_MAXIMO_CREIBLE:
+                        log.info(
+                            "Descarto %s %s %s: ventaja de %.0f%% no es creíble",
+                            player, market_label, line_text, edge,
+                        )
                         continue
 
                     picks.append(

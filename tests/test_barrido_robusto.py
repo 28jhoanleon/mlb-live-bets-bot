@@ -39,7 +39,8 @@ class TestUnFalloNoTumbaElBarrido:
                 raise ConnectionError("la MLB API cortó")
             return _est(player)
 
-        with patch("app.odds.theodds.get_events", return_value=eventos), \
+        with patch("app.odds.parlay.hay_clave", return_value=False), \
+             patch("app.odds.theodds.get_events", return_value=eventos), \
              patch("app.odds.theodds.get_player_props",
                    return_value=_payload(["Bueno", "Explota", "Otro"], ["batter_hits"])), \
              patch.object(dp, "estimate_leg_probability", side_effect=_estimador), \
@@ -61,7 +62,8 @@ class TestUnFalloNoTumbaElBarrido:
                 raise ProbabilityError("no está en el roster")
             return _est(player)
 
-        with patch("app.odds.theodds.get_events", return_value=eventos), \
+        with patch("app.odds.parlay.hay_clave", return_value=False), \
+             patch("app.odds.theodds.get_events", return_value=eventos), \
              patch("app.odds.theodds.get_player_props",
                    return_value=_payload(["Bueno", "Desconocido"], ["batter_hits"])), \
              patch.object(dp, "estimate_leg_probability", side_effect=_estimador), \
