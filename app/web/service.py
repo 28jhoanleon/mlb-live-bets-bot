@@ -35,7 +35,6 @@ from app.mlb.estados import CON_DATOS as _CON_DATOS
 from app.mlb.estados import TERMINADO as _TERMINADO
 from app.mlb.players import get_hitting_split_vs_hand, get_season_hitting_stats, search_player
 from app.analysis.probability import LegEstimate
-from app.analysis.probability import LegEstimate
 from app.mlb.schedule import buscar_partido
 from app.utils.equipos import logo_equipo, nombre_corto, partido_corto
 from app.utils.logger import get_logger
@@ -159,12 +158,22 @@ def _leg_de_equipo(leg: dict) -> dict[str, Any]:
         "current": 0,
         "goal": 0,
         "pct": 0,
+        "state": "unknown",
         "live": False,
     }
 
-    if ambito == "partido" or not equipo:
-        return {**base, "state": "unknown",
-                "note": "Mercado de partido — depende de los pitchers del día, no lo estimo"}
+    if ambito == "partido":
+        return {**base, "note": "Mercado de partido — depende de los pitchers del día, no lo estimo"}
+
+    if not equipo:
+        # Las apuestas guardadas ANTES de que la visión extrajera "team"
+        # no traen el equipo, y no hay forma de saber cuál de los dos del
+        # partido es. Mostrar el equivocado sería peor que no mostrar
+        # nada, así que se pide releer la captura.
+        return {
+            **base,
+            "note": "Apuesta de equipo sin identificar — reenviá la captura para que la lea de nuevo",
+        }
 
     try:
         est = estimate_team_probability(equipo, leg.get("market", ""), leg.get("line", ""))

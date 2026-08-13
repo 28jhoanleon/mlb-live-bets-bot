@@ -95,3 +95,33 @@ class TestEnLaWeb:
 
         assert resultado["state"] != "unknown", "sigue sin estimar el mercado de equipo"
         assert "en sus últimos" in resultado["note"]
+
+
+class TestApuestasViejasSinEquipo:
+    """Las apuestas guardadas ANTES de que la visión extrajera "team" no
+    traen el equipo. Antes caían al mensaje de "mercado de partido", que
+    hacía parecer que la función de equipos no andaba cuando en realidad
+    faltaba el dato de entrada."""
+
+    def test_avisa_que_hay_que_reenviar_la_captura(self):
+        from app.web.service import _leg_de_equipo
+
+        vieja = {"player": None, "market": "Bases por bolas del bateador",
+                 "line": "Over 2.5", "match": "Colorado Rockies @ Kansas City Royals"}
+        nota = _leg_de_equipo(vieja)["note"]
+
+        assert "reenviá" in nota, f"no explica qué hacer: {nota}"
+        assert "pitchers del día" not in nota, (
+            "lo confunde con un mercado de partido: son cosas distintas"
+        )
+
+    def test_no_adivina_cual_de_los_dos_equipos_es(self):
+        """Mostrar el equipo equivocado sería peor que no mostrar nada."""
+        from app.web.service import _leg_de_equipo
+
+        vieja = {"player": None, "market": "Bases por bolas del bateador",
+                 "line": "Over 2.5", "match": "Colorado Rockies @ Kansas City Royals"}
+        salida = _leg_de_equipo(vieja)
+        assert salida["state"] == "unknown"
+        # No inventa cuál de los dos equipos del partido es
+        assert "Rockies" not in salida["note"] and "Royals" not in salida["note"]
