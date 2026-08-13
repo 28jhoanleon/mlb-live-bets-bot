@@ -224,4 +224,30 @@ def find_dream_combos(
 
     # Entre soñadoras, la mejor es la que más probabilidad tiene de darse
     combos.sort(key=lambda c: (c.same_game, -c.combined_probability_pct))
-    return combos[:max_results]
+
+    # Variedad: sin esto las tres sugerencias salían compartiendo 3 de 4
+    # legs -- eran la misma apuesta con un tramo cambiado, así que no
+    # ofrecían alternativas reales. Se exige que cada nueva soñadora
+    # renueve al menos la mitad de sus tramos respecto de las anteriores.
+    elegidas: list[ValueCombo] = []
+    for combo in combos:
+        jugadores = {leg.player for leg in combo.legs}
+        repetida = any(
+            len(jugadores & {l.player for l in ya.legs}) > len(jugadores) // 2
+            for ya in elegidas
+        )
+        if not repetida:
+            elegidas.append(combo)
+        if len(elegidas) == max_results:
+            break
+
+    # Si la exigencia de variedad deja muy pocas, se completa con las
+    # mejores restantes antes que devolver una sola.
+    if len(elegidas) < max_results:
+        for combo in combos:
+            if combo not in elegidas:
+                elegidas.append(combo)
+            if len(elegidas) == max_results:
+                break
+
+    return elegidas[:max_results]

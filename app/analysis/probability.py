@@ -19,7 +19,13 @@ from app.utils.logger import get_logger
 
 log = get_logger(__name__)
 
-_DEFAULT_SAMPLE = 10
+# Partidos recientes que se miran para estimar. Con 10 el suavizado solo
+# puede dar 12 valores distintos (0/10 a 10/10), así que TODOS los picks
+# buenos empataban en 91.7% (10 de 10) y el ranking por ventaja los
+# ordenaba a todos igual: las soñadoras salían repetidas y con el mismo
+# porcentaje. Con 25 la escala se abre y los jugadores se distinguen
+# entre sí, además de que una racha corta pesa menos.
+_DEFAULT_SAMPLE = 25
 
 
 class ProbabilityError(Exception):
