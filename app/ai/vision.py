@@ -223,7 +223,12 @@ def analyze_bet_screenshot(image_bytes: bytes) -> dict[str, Any]:
                 ],
             },
         ],
-        "max_tokens": 1000,
+        # Un cupón de 11 selecciones necesita ~1000 tokens SOLO para el
+        # JSON de respuesta, así que el límite anterior (1000) lo cortaba
+        # justo por la mitad: el JSON quedaba inválido y el bot decía
+        # "no pude leer la captura" como si la imagen estuviera borrosa.
+        # 4000 cubre cupones de hasta ~40 selecciones.
+        "max_tokens": 4000,
         "temperature": 0.1,
     }
 
@@ -241,10 +246,23 @@ def analyze_bet_screenshot(image_bytes: bytes) -> dict[str, Any]:
         raise VisionAnalysisError(f"Fallo al analizar la imagen: {exc}") from exc
 
     try:
-        content = data["choices"][0]["message"]["content"]
+        eleccion = data["choices"][0]
+        content = eleccion["message"]["content"]
+
+        # Si la respuesta se cortó por límite de tokens, el JSON queda
+        # partido al medio. Distinguirlo importa: no es lo mismo "la foto
+        # está borrosa" que "el cupón es más largo de lo que entra".
+        if eleccion.get("finish_reason") == "length":
+            raise VisionAnalysisError(
+                "El cupón es muy largo y la lectura se cortó. Mandá la "
+                "captura partida en dos."
+            )
+
         # Por si el modelo igual envuelve en ```json a pesar del prompt
         cleaned = content.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         return json.loads(cleaned)
+    except VisionAnalysisError:
+        raise
     except (KeyError, IndexError, json.JSONDecodeError) as exc:
         log.error("Respuesta inesperada de OpenAI Vision: %s", data)
         raise VisionAnalysisError(
