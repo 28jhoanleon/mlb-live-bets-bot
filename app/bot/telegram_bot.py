@@ -14,6 +14,7 @@ from app.bot.handlers import (
     live,
     mejorar,
     miid,
+    proveedor,
     props,
     screenshot,
     sonadora,
@@ -80,6 +81,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("mejorar", mejorar.mejorar_cmd))
     app.add_handler(CommandHandler("borrar", borrar.borrar_cmd))
     app.add_handler(CommandHandler("limpiar", limpiar.limpiar_cmd))
+    app.add_handler(CommandHandler("proveedor", proveedor.proveedor_cmd))
     app.add_handler(CommandHandler("calibracion", calibracion.calibracion_cmd))
     app.add_handler(CommandHandler("historial", history.historial))
     app.add_handler(MessageHandler(filters.PHOTO, screenshot.handle_bet_screenshot))

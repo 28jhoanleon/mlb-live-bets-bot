@@ -22,6 +22,7 @@ class Settings:
     # Odds provider — intercambiable. Empezamos con The Odds API.
     odds_provider: str = os.getenv("ODDS_PROVIDER", "the_odds_api")
     odds_api_key: str = os.getenv("ODDS_API_KEY", "")
+    parlay_api_key: str = os.getenv("PARLAY_API_KEY", "")
     # Casas donde el usuario realmente juega. Se usan para PRIORIZAR qué
     # apuestas mostrar, no para calcular la probabilidad justa: esa se
     # sigue calculando con todas las casas disponibles, porque un

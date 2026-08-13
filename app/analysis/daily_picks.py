@@ -73,6 +73,7 @@ def find_daily_picks(
     """Recorre los props del día, calcula nuestra propia probabilidad
     (últimos partidos reales) para cada uno, y la compara contra lo que
     implica la cuota de mercado. Devuelve los picks con mayor edge."""
+    from app.odds import parlay
     from app.odds.theodds import (  # import local: evita ciclo
         OddsClientError,
         get_events,
@@ -85,41 +86,49 @@ def find_daily_picks(
     def _sin_tiempo() -> bool:
         return time.monotonic() - arranque > presupuesto_segundos
 
-    try:
-        events = get_events()
-    except OddsClientError:
-        return []
-
-    # Descartamos partidos ya terminados o de días anteriores: sugerir un
-    # pick de un juego que ya se jugó no sirve para nada, y The Odds API
-    # a veces devuelve eventos viejos todavía en la lista.
-    events = [e for e in events if evento_vigente(e.get("commence_time"))]
-
-    # El mismo jugador aparece en muchos mercados: sin limpiar y reusar la
-    # caché, cada prop repetiría las llamadas a la MLB API.
     limpiar_cache_estimaciones()
 
-    # No arrancar un barrido que agotaría la cuota mensual: cada partido
-    # cuesta una consulta y el plan gratuito trae pocas. Antes se pedían
-    # 12 sin mirar, y el log mostró la cuota en negativo.
-    permitidos = partidos_que_alcanzan(max_events)
-    if permitidos == 0:
-        log.warning("Sin cuota en The Odds API: no hago el barrido")
-        return []
-    if permitidos < max_events:
-        log.info("Cuota justa: reviso %d partidos en vez de %d", permitidos, max_events)
-    seleccionados = events[:permitidos]
+    props_por_evento: list[tuple[dict, dict | None]] = []
 
-    # Los props de cada partido son llamadas independientes: en paralelo
-    # tardan lo que la más lenta, no la suma de las doce.
-    def _props(event):
+    # ParlayAPI primero: trae TODOS los mercados de TODOS los partidos en
+    # una sola llamada de 3 créditos. Con The Odds API había que pedir
+    # partido por partido -12 créditos por barrido-, que es lo que nos
+    # dejó la cuota en negativo. Si falla, se cae al proveedor viejo: no
+    # queremos depender de un servicio nuevo sin red de contención.
+    if parlay.hay_clave():
         try:
-            return event, get_player_props(event["id"])
-        except OddsClientError:
-            return event, None
+            agrupados = parlay.props_por_evento()
+            for datos in agrupados.values():
+                if evento_vigente(datos["event"].get("commence_time")):
+                    props_por_evento.append((datos["event"], datos["props"]))
+            log.info("ParlayAPI: %d partidos con props", len(props_por_evento))
+        except parlay.ParlayClientError:
+            log.warning("ParlayAPI falló, uso The Odds API", exc_info=True)
 
-    with ThreadPoolExecutor(max_workers=6) as ex:
-        props_por_evento = list(ex.map(_props, seleccionados))
+    if not props_por_evento:
+        try:
+            events = get_events()
+        except OddsClientError:
+            return []
+
+        # Descartamos partidos ya terminados o de días anteriores.
+        events = [e for e in events if evento_vigente(e.get("commence_time"))]
+
+        permitidos = partidos_que_alcanzan(max_events)
+        if permitidos == 0:
+            log.warning("Sin cuota en The Odds API: no hago el barrido")
+            return []
+        if permitidos < max_events:
+            log.info("Cuota justa: reviso %d partidos en vez de %d", permitidos, max_events)
+
+        def _props(event):
+            try:
+                return event, get_player_props(event["id"])
+            except OddsClientError:
+                return event, None
+
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            props_por_evento = list(ex.map(_props, events[:permitidos]))
 
     # Ahora que sabemos qué jugadores aparecen, se traen todos de una en
     # paralelo. Después el bucle no toca la red: son aciertos de caché.
