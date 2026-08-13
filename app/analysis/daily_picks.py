@@ -168,6 +168,14 @@ def find_daily_picks(
                     market_label = market.get("key", "")
                     line_text = f"Over {point}"
 
+                    # Defensa: una cuota de 2.00 exacta en un mercado
+                    # muy probable (o muy improbable) casi siempre es un
+                    # precio de relleno, no una oportunidad. Sin esto, un
+                    # marcador que se filtre genera picks fantasma con
+                    # ventajas de cuatro cifras.
+                    if abs(price - 2.0) < 0.001:
+                        continue
+
                     try:
                         estimate = estimate_leg_probability(player, market_label, line_text)
                     except ProbabilityError:

@@ -185,3 +185,46 @@ class TestElMercadoMandaSobreElRol:
             prob.estimate_leg_probability("Jacob deGrom", "pitcher_earned_runs", "Over 0.5")
 
         assert pitcheo.called and not bateo.called
+
+
+class TestCasasDFS:
+    """Las apps de pick'em (PrizePicks, Underdog, Sleeper...) no publican
+    cuota: ParlayAPI las devuelve con +100/-100, un precio simbólico sin
+    margen. Convertido da 2.0, o sea 50% implícito, y como nuestra
+    estimación para "un pitcher permite >=1 hit" ronda el 96%, aparecía
+    una ventaja enorme en TODAS las legs. Las soñadoras salían enteras
+    con cuota 2.0: precios inventados, no oportunidades."""
+
+    def _fila(self, book, over, under):
+        return {"bookmaker": book, "player": "Aaron Nola",
+                "market_key": "player_hits_allowed", "line": 0.5,
+                "over_price": over, "under_price": under,
+                "home_team": "Twins", "away_team": "Phillies",
+                "canonical_event_id": "evt1",
+                "commence_time": "2099-05-01T19:35:00Z"}
+
+    def _books(self, filas):
+        with patch.object(parlay, "get_all_props", return_value=filas):
+            agrupado = parlay.props_por_evento()
+        if not agrupado:
+            return set()
+        return {b["title"] for b in agrupado["evt1"]["props"]["bookmakers"]}
+
+    def test_descarta_las_apps_de_pickem(self):
+        filas = [self._fila("prizepicks", 100, -100),
+                 self._fila("underdog", 100, -100),
+                 self._fila("draftkings", -450, 320)]
+        assert self._books(filas) == {"draftkings"}
+
+    def test_descarta_el_par_simetrico_venga_de_donde_venga(self):
+        """Segunda red: una casa real siempre cobra margen."""
+        assert self._books([self._fila("casa_rara", 100, -100)]) == set()
+
+    def test_conserva_una_cuota_real_aunque_sea_muy_baja(self):
+        """Un pitcher permitiendo >=1 hit se paga carísimo barato (1.02),
+        y eso es legítimo: no hay que confundirlo con precio simbólico."""
+        assert self._books([self._fila("draftkings", -5000, 1500)]) == {"draftkings"}
+
+    def test_detecta_el_precio_simbolico(self):
+        assert parlay._es_precio_simbolico(100, -100) is True
+        assert parlay._es_precio_simbolico(-110, -110) is False

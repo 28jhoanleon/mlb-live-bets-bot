@@ -129,6 +129,28 @@ _MERCADOS_PITCHEO = {
 # resuelvan por el rol real del jugador, que ahí sí es la señal correcta.
 _MERCADOS_AMBIGUOS = {"player_strikeouts", "player_walks"}
 
+# Apps de DFS / pick'em. NO son casas de apuestas: no publican cuota, y
+# ParlayAPI las devuelve con un precio simbólico de +100/-100 ("midpoint,
+# zero-vig" según su documentación).
+#
+# Bug real: ese +100 se convierte a cuota decimal 2.0, o sea 50% implícito.
+# Como nuestra estimación para un pitcher que permite >=1 hit ronda el
+# 96%, aparecía una ventaja gigante en TODAS las legs y las soñadoras
+# salían enteras con cuota 2.0. Eran precios inventados, no oportunidades.
+_CASAS_DFS = {
+    "prizepicks", "underdog", "betr", "sleeper", "pick6", "parlayplay",
+}
+
+# Casas de DFS "pick'em". NO publican cuotas: ParlayAPI las devuelve como
+# +100/-100, un marcador de posición sin vig que significa "acá no hay
+# precio". Tomarlas como cuota real daba 2.00 para TODO -- incluso para
+# cosas casi seguras como "Golpes Permitidos Over 0.5"-, y el bot veía
+# ventajas gigantes contra un precio que no existía. La propia
+# documentación de ParlayAPI las excluye de su consenso y sus arbitrajes.
+_CASAS_DFS = {
+    "prizepicks", "underdog", "betr", "sleeper", "pick6", "parlayplay",
+}
+
 
 def traducir_mercado(clave: str) -> str | None:
     """Pasa una clave de ParlayAPI al vocabulario interno.
@@ -142,6 +164,27 @@ def traducir_mercado(clave: str) -> str | None:
     if clave in _MERCADOS_AMBIGUOS:
         return clave
     return None
+
+
+def _es_marcador_sin_precio(over: Any, under: Any) -> bool:
+    """¿El par de precios es el marcador +100/-100 de "sin cuota"?"""
+    try:
+        o, u = float(over), float(under)
+    except (TypeError, ValueError):
+        return False
+    return abs(o) == 100 and abs(u) == 100
+
+
+def _es_precio_simbolico(over: Any, under: Any) -> bool:
+    """¿Es el par +100/-100 que usan las apps DFS como marcador?
+
+    Una casa real siempre cobra margen: las dos puntas nunca suman
+    exactamente 100% de probabilidad implícita."""
+    o, u = _a_decimal(over), _a_decimal(under)
+    if o is None or u is None:
+        return False
+    implicita = 1 / o + 1 / u
+    return abs(implicita - 1.0) < 0.001
 
 
 def _a_decimal(precio: Any) -> float | None:
@@ -184,7 +227,9 @@ def props_por_evento(markets: str | None = None) -> dict[str, dict[str, Any]]:
             "_books": {},
         })
 
-        book = fila.get("bookmaker") or "?"
+        book = (fila.get("bookmaker") or "?").lower()
+        if book in _CASAS_DFS:
+            continue
         jugador = fila.get("player")
         linea = fila.get("line")
         mercado = traducir_mercado(fila.get("market_key") or "")
@@ -193,6 +238,17 @@ def props_por_evento(markets: str | None = None) -> dict[str, dict[str, Any]]:
 
         mercados = entrada["_books"].setdefault(book, {})
         outcomes = mercados.setdefault(mercado, [])
+
+        # Un par exactamente simétrico en +100/-100 es el marcador de
+        # "sin precio", no un mercado realmente parejo: se descarta venga
+        # de la casa que venga.
+        if _es_marcador_sin_precio(fila.get("over_price"), fila.get("under_price")):
+            continue
+
+        # Segunda red: un par exactamente simétrico sin margen no es una
+        # cuota de mercado real, venga de la casa que venga.
+        if _es_precio_simbolico(fila.get("over_price"), fila.get("under_price")):
+            continue
 
         for lado, precio in (("Over", fila.get("over_price")),
                              ("Under", fila.get("under_price"))):
@@ -215,10 +271,14 @@ def props_por_evento(markets: str | None = None) -> dict[str, dict[str, Any]]:
                     {
                         "title": book,
                         "markets": [
-                            {"key": k, "outcomes": o} for k, o in mercados.items()
+                            {"key": k, "outcomes": o}
+                            for k, o in mercados.items() if o
                         ],
                     }
                     for book, mercados in entrada["_books"].items()
+                    # Un book sin un solo mercado con precios no aporta nada
+                    # y confunde a quien cuente "cuántas casas cotizan esto".
+                    if any(mercados.values())
                 ]
             },
         }
