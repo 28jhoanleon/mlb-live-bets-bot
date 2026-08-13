@@ -98,6 +98,52 @@ def get_all_props(markets: str | None = None) -> list[dict[str, Any]]:
     return datos if isinstance(datos, list) else []
 
 
+# ParlayAPI nombra TODOS los mercados con el prefijo `player_`, mientras
+# que el resto del proyecto distingue `batter_` de `pitcher_`. Sin
+# traducir esto, "player_runs" (carreras ANOTADAS, de bateo) aplicado a
+# un pitcher se interpretaba como carreras PERMITIDAS: el bot calculaba
+# "permite >=1 carrera" (casi siempre) y lo comparaba contra el precio de
+# "el pitcher anota una carrera" (casi nunca). Ventaja falsa enorme, y el
+# buscador de soñadoras elegía sistemáticamente esos casos.
+_MERCADOS_BATEO = {
+    "player_hits": "batter_hits",
+    "player_home_runs": "batter_home_runs",
+    "player_rbis": "batter_rbis",
+    "player_runs": "batter_runs_scored",
+    "player_total_bases": "batter_total_bases",
+    "player_singles": "batter_singles",
+    "player_doubles": "batter_doubles",
+    "player_triples": "batter_triples",
+    "player_hits_runs_rbis": "batter_hits_runs_rbis",
+    "player_stolen_bases": "batter_stolen_bases",
+}
+
+_MERCADOS_PITCHEO = {
+    "player_pitcher_outs": "pitcher_outs",
+    "player_hits_allowed": "pitcher_hits_allowed",
+    "player_earned_runs": "pitcher_earned_runs",
+}
+
+# Genuinamente ambiguos: los ponches de un pitcher son los que reparte;
+# los de un bateador, los que se come. Se dejan sin prefijo para que se
+# resuelvan por el rol real del jugador, que ahí sí es la señal correcta.
+_MERCADOS_AMBIGUOS = {"player_strikeouts", "player_walks"}
+
+
+def traducir_mercado(clave: str) -> str | None:
+    """Pasa una clave de ParlayAPI al vocabulario interno.
+
+    Devuelve None si el mercado no lo sabemos evaluar: preferible
+    descartarlo que interpretarlo mal."""
+    if clave in _MERCADOS_BATEO:
+        return _MERCADOS_BATEO[clave]
+    if clave in _MERCADOS_PITCHEO:
+        return _MERCADOS_PITCHEO[clave]
+    if clave in _MERCADOS_AMBIGUOS:
+        return clave
+    return None
+
+
 def _a_decimal(precio: Any) -> float | None:
     """ParlayAPI puede devolver precio americano; se normaliza a decimal,
     que es lo que usa el resto del proyecto."""
@@ -139,9 +185,9 @@ def props_por_evento(markets: str | None = None) -> dict[str, dict[str, Any]]:
         })
 
         book = fila.get("bookmaker") or "?"
-        mercado = fila.get("market_key") or ""
         jugador = fila.get("player")
         linea = fila.get("line")
+        mercado = traducir_mercado(fila.get("market_key") or "")
         if not mercado or not jugador:
             continue
 

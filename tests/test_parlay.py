@@ -72,14 +72,14 @@ class TestTraduccionAlFormatoInterno:
         devigar."""
         books = self._agrupado()["evt1"]["props"]["bookmakers"]
         dk = next(b for b in books if b["title"] == "draftkings")
-        mercado = next(m for m in dk["markets"] if m["key"] == "player_hits_runs_rbis")
+        mercado = next(m for m in dk["markets"] if m["key"] == "batter_hits_runs_rbis")
         lados = {o["name"] for o in mercado["outcomes"]}
         assert lados == {"Over", "Under"}
 
     def test_las_cuotas_quedan_en_decimal(self):
         books = self._agrupado()["evt1"]["props"]["bookmakers"]
         dk = next(b for b in books if b["title"] == "draftkings")
-        mercado = next(m for m in dk["markets"] if m["key"] == "player_hits_runs_rbis")
+        mercado = next(m for m in dk["markets"] if m["key"] == "batter_hits_runs_rbis")
         for o in mercado["outcomes"]:
             assert o["price"] > 1.0, "quedó en formato americano"
 
@@ -90,7 +90,7 @@ class TestTraduccionAlFormatoInterno:
 
         agrupado = group_props_by_outcome(self._agrupado()["evt1"]["props"])
         assert agrupado, "la traducción no produjo nada consumible"
-        clave = "player_hits_runs_rbis|Aaron Judge|1.5"
+        clave = "batter_hits_runs_rbis|Aaron Judge|1.5"
         assert clave in agrupado
         assert set(agrupado[clave]) == {"draftkings", "pinnacle"}
 
@@ -119,3 +119,69 @@ class TestErrores:
         monkeypatch.setattr(parlay, "settings",
                             dataclasses.replace(settings, parlay_api_key="abc"))
         assert parlay.hay_clave() is True
+
+
+class TestTraduccionDeMercados:
+    """EL bug que hizo que todas las soñadoras salieran mal.
+
+    ParlayAPI nombra todo con el prefijo `player_`, sin distinguir bateo
+    de pitcheo. "player_runs" son carreras ANOTADAS (bateo), pero
+    aplicado a un pitcher el bot lo interpretaba como carreras
+    PERMITIDAS: calculaba "permite >=1 carrera" (~92%) y lo comparaba
+    contra el precio de "el pitcher anota" (~29%). Ventaja falsa
+    enorme, y el buscador elegía sistemáticamente esos casos: por eso
+    todas las legs decían exactamente 91.7% y todos eran pitchers.
+    """
+
+    def test_las_carreras_son_de_bateo(self):
+        assert parlay.traducir_mercado("player_runs") == "batter_runs_scored"
+
+    def test_las_carreras_permitidas_son_de_pitcheo(self):
+        assert parlay.traducir_mercado("player_earned_runs") == "pitcher_earned_runs"
+
+    def test_hits_y_hits_permitidos_no_se_confunden(self):
+        assert parlay.traducir_mercado("player_hits") == "batter_hits"
+        assert parlay.traducir_mercado("player_hits_allowed") == "pitcher_hits_allowed"
+
+    def test_los_ambiguos_quedan_para_resolver_por_rol(self):
+        """Los ponches de un pitcher son los que reparte; los de un
+        bateador, los que se come. Ahí el rol SÍ es la señal correcta."""
+        assert parlay.traducir_mercado("player_strikeouts") == "player_strikeouts"
+
+    def test_un_mercado_desconocido_se_descarta(self):
+        """Mejor perder un prop que interpretarlo mal."""
+        assert parlay.traducir_mercado("player_first_hit") is None
+        assert parlay.traducir_mercado("cualquier_cosa") is None
+
+
+class TestElMercadoMandaSobreElRol:
+    def test_un_mercado_de_bateo_sobre_un_pitcher_se_rechaza(self):
+        """Con el DH universal los pitchers no batean: esto no es una
+        oportunidad, es un error de lectura."""
+        from unittest.mock import patch
+
+        from app.analysis import probability as prob
+        from app.analysis.probability import ProbabilityError
+
+        prob.limpiar_cache_estimaciones()
+        with patch.object(prob, "search_player",
+                          return_value={"id": 1, "full_name": "Jacob deGrom",
+                                        "position": "Pitcher"}):
+            with pytest.raises(ProbabilityError):
+                prob.estimate_leg_probability("Jacob deGrom", "batter_runs_scored", "Over 0.5")
+
+    def test_un_mercado_de_pitcheo_usa_stats_de_pitcheo(self):
+        from unittest.mock import patch
+
+        from app.analysis import probability as prob
+
+        juegos = [{"date": f"2026-08-{i+1:02d}", "earned_runs": 2} for i in range(10)]
+        prob.limpiar_cache_estimaciones()
+        with patch.object(prob, "search_player",
+                          return_value={"id": 1, "full_name": "Jacob deGrom",
+                                        "position": "Pitcher"}), \
+             patch.object(prob, "get_recent_pitching_games", return_value=juegos) as pitcheo, \
+             patch.object(prob, "get_recent_hitting_games") as bateo:
+            prob.estimate_leg_probability("Jacob deGrom", "pitcher_earned_runs", "Over 0.5")
+
+        assert pitcheo.called and not bateo.called

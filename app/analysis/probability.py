@@ -258,13 +258,39 @@ def _cargar_jugador_y_partidos(
         raise ProbabilityError(f"No encontré a '{player_name}' en el roster actual de MLB.")
 
     side, threshold = _parse_line(line_text)
-    is_pitcher = player.get("position") == "Pitcher"
+    # El MERCADO manda sobre el rol del jugador. Un prefijo explícito
+    # ("batter_runs_scored") dice sin ambigüedad de qué se trata; el rol
+    # solo decide en los mercados que de verdad son ambiguos (ponches y
+    # bases por bolas: un pitcher los reparte, un bateador los recibe).
+    #
+    # Bug real que esto arregla: "carreras" leído sobre un PITCHER se
+    # tomaba como carreras PERMITIDAS aunque el mercado fuera carreras
+    # ANOTADAS. El bot calculaba ~92% contra un precio de ~29% y veía una
+    # ventaja enorme que no existía; las soñadoras terminaban siendo
+    # todas pitchers mal interpretados.
+    es_de_bateo = market_text.startswith("batter_")
+    es_de_pitcheo = market_text.startswith("pitcher_")
+    if es_de_bateo:
+        is_pitcher = False
+    elif es_de_pitcheo:
+        is_pitcher = True
+    else:
+        is_pitcher = player.get("position") == "Pitcher"
 
     stat_fields = (
         _classify_pitcher_market(market_text)
         if is_pitcher
         else _classify_batter_market(market_text)
     )
+
+    # Con el DH universal los pitchers prácticamente no batean: un
+    # mercado de bateo sobre un pitcher no es una oportunidad, es un
+    # error de lectura.
+    if es_de_bateo and player.get("position") == "Pitcher":
+        raise ProbabilityError(
+            f"{player['full_name']} es pitcher: no tiene sentido un mercado de bateo."
+        )
+
     games = _partidos_cacheados(player["id"], is_pitcher, sample)
 
     if not games:

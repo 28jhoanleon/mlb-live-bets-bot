@@ -16,6 +16,11 @@ PARTIDOS = [
 
 
 def _sugerir(linea):
+    # La caché de estimaciones es global: sin limpiarla, un test previo
+    # puede dejar cargado a este mismo jugador con otros datos.
+    from app.analysis.probability import limpiar_cache_estimaciones
+
+    limpiar_cache_estimaciones()
     with patch("app.analysis.probability.search_player",
                return_value={"id": 1, "full_name": "Andrew Painter", "position": "Pitcher"}), \
          patch("app.analysis.probability.get_recent_pitching_games", return_value=PARTIDOS):
