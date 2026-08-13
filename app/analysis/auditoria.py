@@ -181,3 +181,91 @@ def armar_mejorada(auditoria: AuditoriaTicket, picks: list) -> list:
                 continue
         mejorada.append(leg)
     return mejorada
+
+
+# --- Versión segura -----------------------------------------------------
+#
+# Distinto de las soñadoras: acá no se busca cuota alta, se busca que la
+# combinada ENTRE. Se conservan los mismos jugadores y mercados que
+# eligió el usuario y se BAJAN las líneas hasta que cada tramo alcance el
+# objetivo. Pierde cuota, gana probabilidad.
+
+OBJETIVO_SEGURO = 90.0
+
+
+@dataclass
+class LegSegura:
+    player: str
+    market: str
+    linea_original: str
+    linea_nueva: str
+    probabilidad: float
+    cambio: bool
+
+
+def version_segura(legs_raw: list[dict], objetivo: float = OBJETIVO_SEGURO) -> tuple[list[LegSegura], float | None]:
+    """Baja las líneas de cada tramo hasta alcanzar el objetivo.
+
+    Devuelve (tramos, probabilidad combinada). La probabilidad combinada
+    se calcula multiplicando, con la misma penalización por dependencia
+    que usa el resto del proyecto: cuatro tramos al 90% no dan 90%, dan
+    ~65%. Decirlo claro evita vender una seguridad que no existe.
+    """
+    from app.analysis.probability import sugerir_lineas
+
+    salidas: list[LegSegura] = []
+    for leg in legs_raw:
+        jugador = leg.get("player")
+        mercado = leg.get("market") or ""
+        linea = leg.get("line") or ""
+        if not jugador:
+            continue
+
+        try:
+            opciones = sugerir_lineas(jugador, mercado, linea)
+        except Exception:
+            log.debug("Sin alternativas para %s", jugador, exc_info=True)
+            continue
+        if not opciones:
+            continue
+
+        actual = next((o for o in opciones if o.es_la_apostada), None)
+        lado = actual.side if actual else "Over"
+
+        # Del mismo lado, la línea MÁS exigente que igual llegue al
+        # objetivo. En Over eso es la más alta que cumpla; en Under, la
+        # más baja. Así se baja el riesgo sin regalar cuota de más.
+        candidatas = [
+            o for o in opciones
+            if o.side == lado and o.probabilidad_pct >= objetivo
+        ]
+        if not candidatas:
+            # Ni la línea más floja llega al objetivo: se informa la
+            # mejor disponible en vez de omitir el tramo en silencio.
+            candidatas = [max(opciones, key=lambda o: o.probabilidad_pct)]
+
+        elegida = (
+            max(candidatas, key=lambda o: o.linea) if lado == "Over"
+            else min(candidatas, key=lambda o: o.linea)
+        )
+
+        salidas.append(LegSegura(
+            player=jugador,
+            market=mercado,
+            linea_original=linea,
+            linea_nueva=f"{elegida.side} {elegida.linea:g}",
+            probabilidad=elegida.probabilidad_pct,
+            cambio=(actual is None or elegida.linea != actual.linea),
+        ))
+
+    if not salidas:
+        return [], None
+
+    prob = 1.0
+    for s in salidas:
+        prob *= s.probabilidad / 100
+    # Misma penalización por dependencia que en combos.py: los tramos
+    # comparten día y condiciones, no son independientes.
+    prob *= 0.97 ** max(0, len(salidas) - 1)
+
+    return salidas, round(prob * 100, 1)

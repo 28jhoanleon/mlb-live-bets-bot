@@ -12,9 +12,11 @@ from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
 from app.analysis.auditoria import (
+    OBJETIVO_SEGURO,
     PROB_FLOJA,
     armar_mejorada,
     auditar_legs,
+    version_segura,
 )
 from app.analysis.daily_picks import find_daily_picks
 from app.db.database import get_active_bet
@@ -50,6 +52,61 @@ def _fmt_pick(pick) -> str:
             f"{pick.market_probability_pct}%")
 
 
+async def _responder_version_segura(aviso, legs_raw: list[dict]) -> None:
+    """Baja las líneas hasta que cada tramo sea muy probable.
+
+    Es lo opuesto a una soñadora: se resigna cuota para que la
+    combinada entre. Mismos jugadores y mercados, líneas más blandas.
+    """
+    try:
+        tramos, combinada = await asyncio.wait_for(
+            asyncio.to_thread(version_segura, legs_raw), timeout=120,
+        )
+    except asyncio.TimeoutError:
+        await aviso.edit_text("Tardó demasiado. Probá de nuevo en un rato.")
+        return
+    except Exception:
+        log.exception("Error armando la versión segura")
+        await aviso.edit_text("No pude armar la versión segura.")
+        return
+
+    if not tramos:
+        await aviso.edit_text(
+            "No pude calcular líneas alternativas para estos tramos."
+        )
+        return
+
+    partes = [f"🛡 *Versión segura* (objetivo {OBJETIVO_SEGURO:g}% por tramo)", ""]
+    for t in tramos:
+        mercado = nombre_stake_texto(t.market)
+        if t.cambio:
+            partes.append(
+                f"🟢 {escape_md(t.player)} — _{escape_md(mercado)}_\n"
+                f"   {escape_md(t.linea_original)} → *{escape_md(t.linea_nueva)}* "
+                f"· {t.probabilidad}%"
+            )
+        else:
+            partes.append(
+                f"✅ {escape_md(t.player)} — _{escape_md(mercado)}_\n"
+                f"   {escape_md(t.linea_nueva)} · {t.probabilidad}% "
+                f"_(ya estaba bien)_"
+            )
+
+    if combinada is not None:
+        partes.append("")
+        partes.append(f"*Que entren todas: {combinada}%*")
+        if combinada < 60:
+            partes.append(
+                "\n_Ojo: aunque cada tramo sea muy probable, multiplicarlos "
+                "baja mucho el total. Menos tramos = más chance real._"
+            )
+
+    partes.append("")
+    partes.append("_Paga bastante menos que la original: es el precio de la seguridad._")
+
+    await edit_then_send_rest(aviso, "\n".join(partes), parse_mode=ParseMode.MARKDOWN)
+
+
 async def mejorar_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
     guardada = get_active_bet(chat_id)
@@ -61,10 +118,43 @@ async def mejorar_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         )
         return
 
+    # Si hay varias apuestas, se elige cuál: antes se auditaban todas
+    # juntas y el resultado mezclaba tramos de apuestas distintas.
+    if len(tickets) > 1 and not context.args:
+        lineas = ["Tenés *varias apuestas*. ¿Cuál mejoro?", ""]
+        for i, t in enumerate(tickets, 1):
+            legs = t.get("legs", [])
+            partido = legs[0].get("match", "?") if legs else "?"
+            cuota = t.get("total_odds")
+            extra = f" · paga {cuota}" if cuota else ""
+            lineas.append(f"*{i}.* {escape_md(partido)} — {len(legs)} tramos{extra}")
+        lineas.append("")
+        lineas.append("Mandá `/mejorar 2` para elegir.")
+        lineas.append("Para bajar líneas y buscar seguridad: `/mejorar 2 seguro`")
+        await update.message.reply_text("\n".join(lineas), parse_mode=ParseMode.MARKDOWN)
+        return
+
+    elegido = tickets
+    args = [a.lower() for a in (context.args or [])]
+    modo_seguro = "seguro" in args
+    numeros = [a for a in args if a.isdigit()]
+    if numeros:
+        idx = int(numeros[0])
+        if idx < 1 or idx > len(tickets):
+            await update.message.reply_text(f"No hay una apuesta número {idx}.")
+            return
+        elegido = [tickets[idx - 1]]
+
+    tickets = elegido
+
     legs_raw = [leg for t in tickets for leg in t.get("legs", [])]
     aviso = await update.message.reply_text(
         f"Revisando {len(legs_raw)} tramos..."
     )
+
+    if modo_seguro:
+        await _responder_version_segura(aviso, legs_raw)
+        return
 
     # Techo duro: si algo se traba, el usuario recibe una respuesta igual
     # en vez de quedarse mirando "Revisando..." indefinidamente.

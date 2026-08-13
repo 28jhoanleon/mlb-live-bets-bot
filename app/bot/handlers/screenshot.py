@@ -443,7 +443,10 @@ async def handle_bet_screenshot(update: Update, context: ContextTypes.DEFAULT_TY
     # alcanza con escribir "probar" en el pie de foto. No se guarda como
     # apuesta activa ni se trackea -- solo devuelve el análisis. Así se
     # puede evaluar una combinada antes de poner plata.
-    es_borrador = pie.lower() in _PALABRAS_BORRADOR
+    # Se saca la barra: es natural escribir "/probar" como si fuera un
+    # comando, y así estaba quedando como etiqueta en vez de activar el
+    # modo borrador.
+    es_borrador = pie.lower().lstrip("/").strip() in _PALABRAS_BORRADOR
 
     etiqueta = None if es_borrador else (pie[:20] or None)
 
