@@ -58,3 +58,40 @@ class TestComandosRegistrados:
         assert any(
             isinstance(h, MessageHandler) for h in app.handlers.get(0, [])
         ), "no hay handler para las fotos: el bot no puede leer capturas"
+
+
+class TestMenuDeTelegram:
+    """El menú que aparece al escribir "/". Con 20 comandos, acordarse
+    de memoria cuál era cuál no es realista."""
+
+    def test_todo_lo_del_menu_existe_de_verdad(self, tmp_path, monkeypatch):
+        """Un comando en el menú que no está registrado le da al usuario
+        una opción que no funciona."""
+        from app.bot.telegram_bot import MENU_COMANDOS
+
+        _preparar(tmp_path, monkeypatch)
+        registrados = _comandos_registrados()
+        fantasmas = [c for c, _ in MENU_COMANDOS if c not in registrados]
+        assert not fantasmas, f"en el menú pero no registrados: {fantasmas}"
+
+    def test_los_comandos_principales_estan_en_el_menu(self):
+        from app.bot.telegram_bot import MENU_COMANDOS
+
+        en_menu = {c for c, _ in MENU_COMANDOS}
+        for esperado in ("start", "mejorar", "calibracion", "sonadoras", "borrar"):
+            assert esperado in en_menu, f"falta {esperado} en el menú"
+
+    def test_todos_tienen_descripcion(self):
+        from app.bot.telegram_bot import MENU_COMANDOS
+
+        assert all(d.strip() for _, d in MENU_COMANDOS)
+
+    def test_telegram_limita_las_descripciones(self):
+        """Telegram rechaza descripciones de más de 256 caracteres y
+        comandos de más de 32."""
+        from app.bot.telegram_bot import MENU_COMANDOS
+
+        for comando, desc in MENU_COMANDOS:
+            assert len(comando) <= 32, comando
+            assert len(desc) <= 256, comando
+            assert comando.islower(), comando

@@ -66,6 +66,17 @@ def _dividir_por_partido(ticket: dict[str, Any]) -> list[dict[str, Any]]:
     if ticket.get("total_odds"):
         return [ticket]
 
+    # Tampoco lo partimos si las legs traen "group_odds": esa es la cuota
+    # de cada bloque DENTRO de un mismo cupón. Que existan varios bloques
+    # es justamente la forma de un cupón combinado de varios partidos, no
+    # la señal de que sean apuestas distintas.
+    #
+    # Bug real: un cupón con cuatro bloques (5.00, 2.36, 1.92, 3.55) y sin
+    # total visible se partía en cuatro apuestas separadas, aunque el
+    # usuario lo estaba jugando como una sola combinada.
+    if any(leg.get("group_odds") for leg in legs):
+        return [ticket]
+
     partidos = {_match_key(leg.get("match")) for leg in legs if leg.get("match")}
 
     # Un solo partido (o legs sin partido declarado): se deja como está

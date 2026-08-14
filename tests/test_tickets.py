@@ -320,3 +320,49 @@ class TestCombinadasDeVariosPartidos:
 
         assert ticket["legs_declaradas"] == 11
         assert len(ticket["legs"]) == 2
+
+
+class TestCuponConVariosBloques:
+    """Bug real: un cupón con cuatro bloques ("Multi apuesta del mismo
+    partido"), cada uno con su cuota (5.00, 2.36, 1.92, 3.55) pero SIN
+    un total visible, se partía en cuatro apuestas separadas. El usuario
+    lo estaba jugando como una sola combinada."""
+
+    def _cupon(self):
+        return {"legs": [
+            {"match": "Detroit Tigers vs Cleveland Guardians",
+             "player": "Max Clark", "group_odds": "5.00"},
+            {"match": "Miami Marlins vs Pittsburgh Pirates",
+             "player": "Griffin Conine", "group_odds": "2.36"},
+            {"match": "Chicago White Sox vs Cincinnati Reds",
+             "player": "Davis Martin", "group_odds": "1.92"},
+        ]}
+
+    def test_no_se_parte_si_hay_cuota_por_bloque(self):
+        from app.analysis.tickets import _dividir_por_partido
+
+        assert len(_dividir_por_partido(self._cupon())) == 1
+
+    def test_conserva_todas_las_selecciones_juntas(self):
+        from app.analysis.tickets import _dividir_por_partido
+
+        ticket = _dividir_por_partido(self._cupon())[0]
+        assert len(ticket["legs"]) == 3
+
+    def test_sigue_partiendo_cuando_de_verdad_hay_mezcla(self):
+        """La red de seguridad tiene que seguir funcionando: sin cuota
+        total NI cuota de bloque, varias tarjetas juntas probablemente
+        sean un error de lectura."""
+        from app.analysis.tickets import _dividir_por_partido
+
+        mezcla = {"legs": [
+            {"match": "A vs B", "player": "X"},
+            {"match": "C vs D", "player": "Y"},
+        ]}
+        assert len(_dividir_por_partido(mezcla)) == 2
+
+    def test_la_cuota_total_sigue_mandando(self):
+        from app.analysis.tickets import _dividir_por_partido
+
+        con_total = {**self._cupon(), "total_odds": "80.5"}
+        assert len(_dividir_por_partido(con_total)) == 1

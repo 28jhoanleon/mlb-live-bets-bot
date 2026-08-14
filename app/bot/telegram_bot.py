@@ -49,6 +49,48 @@ async def _manejar_error(update, context) -> None:
         log.exception("Tampoco pude avisarle al usuario")
 
 
+# Menú que Telegram muestra al escribir "/". Sin esto había que
+# acordarse los 20 comandos de memoria.
+MENU_COMANDOS = [
+    ("start", "Qué hace el bot y cómo usarlo"),
+    ("mejorar", "Analiza tu apuesta y propone una mejor"),
+    ("calibracion", "¿Los porcentajes del bot son honestos?"),
+    ("sonadoras", "Combinadas de cuota alta con valor"),
+    ("combos", "Soñadoras sugeridas y si se dieron"),
+    ("value", "Picks con ventaja sobre la cuota"),
+    ("analyze", "Analiza un jugador puntual"),
+    ("compare", "Compara dos jugadores"),
+    ("live", "Partidos en curso"),
+    ("today", "Partidos de hoy"),
+    ("games", "Calendario"),
+    ("props", "Props disponibles de un partido"),
+    ("strikeouts", "Ponches de los abridores de hoy"),
+    ("hits", "Mejores props de hits"),
+    ("hr", "Mejores props de jonrones"),
+    ("refresh", "Actualiza tu apuesta sin mandar la foto"),
+    ("borrar", "Saca una apuesta de la lista"),
+    ("nueva", "Borra todas las apuestas guardadas"),
+    ("historial", "Capturas analizadas"),
+    ("proveedor", "Estado de las APIs de cuotas"),
+    ("limpiar", "Borra resultados mal calculados"),
+    ("miid", "Tu ID de chat"),
+]
+
+
+async def _registrar_menu(app: Application) -> None:
+    """Publica el menú en Telegram al arrancar."""
+    from telegram import BotCommand
+
+    try:
+        await app.bot.set_my_commands(
+            [BotCommand(c, d) for c, d in MENU_COMANDOS]
+        )
+        log.info("Menú de comandos publicado (%d)", len(MENU_COMANDOS))
+    except Exception:
+        # Que falle el menú no puede impedir que el bot arranque.
+        log.warning("No pude publicar el menú de comandos", exc_info=True)
+
+
 def build_app() -> Application:
     settings.validate()
     init_db()
@@ -111,6 +153,7 @@ def build_app() -> Application:
         if presente
     ]
     app.add_error_handler(_manejar_error)
+    app.post_init = _registrar_menu
 
     log.info("Handlers registrados: %s", ", ".join(comandos + extras))
     return app
