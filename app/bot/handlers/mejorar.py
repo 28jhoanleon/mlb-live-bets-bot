@@ -55,6 +55,15 @@ def _fmt_pick(pick) -> str:
 
 def _fmt_tramo_seguro(t) -> str:
     mercado = nombre_stake_texto(t.market)
+    if getattr(t, "no_alcanza", False):
+        # Ninguna línea de este mercado llega al objetivo: se marca en
+        # vez de esconderlo, porque saber CUÁL es el tramo que no da es
+        # lo que permite decidir si sacarlo.
+        return (
+            f"❌ {escape_md(t.player)} — _{escape_md(mercado)}_\n"
+            f"   ni con {escape_md(t.linea_nueva)} pasa del {t.probabilidad}% "
+            f"— *sacala*"
+        )
     if t.cambio:
         return (
             f"🟢 {escape_md(t.player)} — _{escape_md(mercado)}_\n"
@@ -108,9 +117,24 @@ async def _responder_version_segura(aviso, legs_raw: list[dict]) -> None:
             partes.append("")
 
 
+    descartados = [t for t in tramos if getattr(t, "no_alcanza", False)]
+    buenos = len(tramos) - len(descartados)
+
     if combinada is not None:
         partes.append("")
-        partes.append(f"*Que entren todas: {combinada}%*")
+        if descartados:
+            partes.append(
+                f"*Sacando las ❌, quedan {buenos} tramos: {combinada}% "
+                "de que entren todas*"
+            )
+        else:
+            partes.append(f"*Que entren todas: {combinada}%*")
+    elif descartados:
+        partes.append("")
+        partes.append(
+            "⚠️ *Ningún tramo llega al objetivo.* Ni bajando las líneas "
+            "esta combinada da para recomendarla."
+        )
         if combinada < 60:
             partes.append(
                 "\n_Ojo: aunque cada tramo sea muy probable, multiplicarlos "

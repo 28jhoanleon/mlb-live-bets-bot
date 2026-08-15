@@ -190,7 +190,17 @@ def armar_mejorada(auditoria: AuditoriaTicket, picks: list) -> list:
 # eligió el usuario y se BAJAN las líneas hasta que cada tramo alcance el
 # objetivo. Pierde cuota, gana probabilidad.
 
-OBJETIVO_SEGURO = 90.0
+# Umbral por tramo. Elegido con la cuenta a la vista:
+#
+#   tramos |   80%  |   85%  |   90%
+#        4 | 37.4%  | 47.6%  | 59.9%   <- que entren TODAS
+#   paga   | 2.44x  | 1.92x  | 1.52x
+#
+# Con 80% una combinada de 4 no llega ni a la mitad de las veces, así que
+# llamarla "segura" sería mentir. Con 90% entra más seguido pero paga tan
+# poco que no compensa el riesgo. 85% es el punto donde las dos cosas
+# siguen teniendo sentido.
+OBJETIVO_SEGURO = 85.0
 
 
 @dataclass
@@ -202,6 +212,10 @@ class LegSegura:
     linea_nueva: str
     probabilidad: float
     cambio: bool
+    # True cuando NINGUNA línea del mercado llega al objetivo. Se marca
+    # en vez de descartarse en silencio: saber cuál es el tramo que no
+    # da es justamente la información útil.
+    no_alcanza: bool = False
 
 
 def version_segura(legs_raw: list[dict], objetivo: float = OBJETIVO_SEGURO) -> tuple[list[LegSegura], float | None]:
@@ -258,16 +272,24 @@ def version_segura(legs_raw: list[dict], objetivo: float = OBJETIVO_SEGURO) -> t
             linea_nueva=f"{elegida.side} {elegida.linea:g}",
             probabilidad=elegida.probabilidad_pct,
             cambio=(actual is None or elegida.linea != actual.linea),
+            no_alcanza=elegida.probabilidad_pct < objetivo,
         ))
 
     if not salidas:
         return [], None
 
+    # La probabilidad se calcula SOLO con los tramos que alcanzan el
+    # objetivo: es la apuesta que de verdad se recomienda. Incluir los
+    # que no dan mostraría un número peor que el de la apuesta sugerida.
+    buenos = [s for s in salidas if not s.no_alcanza]
+    if not buenos:
+        return salidas, None
+
     prob = 1.0
-    for s in salidas:
+    for s in buenos:
         prob *= s.probabilidad / 100
     # Misma penalización por dependencia que en combos.py: los tramos
     # comparten día y condiciones, no son independientes.
-    prob *= 0.97 ** max(0, len(salidas) - 1)
+    prob *= 0.97 ** max(0, len(buenos) - 1)
 
     return salidas, round(prob * 100, 1)
