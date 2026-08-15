@@ -195,6 +195,35 @@ class VisionAnalysisError(Exception):
     """Error al analizar la imagen con OpenAI Vision."""
 
 
+def _extraer_json(content: str) -> dict:
+    """Saca el JSON de la respuesta aunque venga con texto alrededor.
+
+    El modelo a veces antepone una frase ("Aquí está el análisis:") o
+    envuelve en ```json pese al prompt. Antes se intentaba parsear todo
+    de una y cualquiera de esas dos cosas hacía fallar la lectura de una
+    captura perfectamente legible.
+    """
+    texto = (content or "").strip()
+
+    # Envoltura de bloque de código.
+    if texto.startswith("```"):
+        texto = texto.removeprefix("```json").removeprefix("```")
+        texto = texto.removesuffix("```").strip()
+
+    try:
+        return json.loads(texto)
+    except json.JSONDecodeError:
+        pass
+
+    # Último recurso: quedarse con lo que hay entre la primera llave y
+    # la última. Cubre el caso de texto explicativo antes o después.
+    inicio, fin = texto.find("{"), texto.rfind("}")
+    if inicio != -1 and fin > inicio:
+        return json.loads(texto[inicio:fin + 1])
+
+    raise json.JSONDecodeError("sin JSON en la respuesta", texto or "", 0)
+
+
 def analyze_bet_screenshot(image_bytes: bytes) -> dict[str, Any]:
     """Envía la captura a OpenAI Vision y devuelve las selecciones
     detectadas ya parseadas como dict."""
@@ -258,13 +287,21 @@ def analyze_bet_screenshot(image_bytes: bytes) -> dict[str, Any]:
                 "captura partida en dos."
             )
 
-        # Por si el modelo igual envuelve en ```json a pesar del prompt
-        cleaned = content.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        return json.loads(cleaned)
+        return _extraer_json(content)
     except VisionAnalysisError:
         raise
     except (KeyError, IndexError, json.JSONDecodeError) as exc:
         log.error("Respuesta inesperada de OpenAI Vision: %s", data)
+        # Mostrar lo que REALMENTE contestó: si el modelo respondió en
+        # prosa ("no puedo leer esta imagen porque..."), ese texto dice
+        # el problema real. Sin esto solo se veía un error genérico que
+        # mandaba a sacar fotos más nítidas aunque la foto estuviera bien.
+        crudo = ""
+        try:
+            crudo = str(data["choices"][0]["message"]["content"]).strip()
+        except Exception:
+            pass
+        pista = f' Contestó: "{crudo[:180]}"' if crudo else ""
         raise VisionAnalysisError(
-            "No pude interpretar la respuesta del análisis de imagen."
+            f"No pude interpretar la respuesta del análisis de imagen.{pista}"
         ) from exc

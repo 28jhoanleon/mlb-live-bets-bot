@@ -90,3 +90,48 @@ class TestRespuestaCortada:
             post.return_value.json.return_value = self._respuesta("stop", crudo)
             post.return_value.raise_for_status.return_value = None
             assert vision.analyze_bet_screenshot(b"imagen") == {"bets": []}
+
+
+class TestJsonConTextoAlrededor:
+    """El modelo a veces antepone una frase ("Aquí está el análisis:") o
+    envuelve en ```json pese al prompt. Antes cualquiera de esas dos
+    cosas hacía fallar la lectura de una captura perfectamente legible,
+    y el mensaje culpaba a la calidad de la imagen."""
+
+    def test_json_limpio(self):
+        assert vision._extraer_json('{"bets": []}') == {"bets": []}
+
+    def test_con_frase_antes(self):
+        crudo = 'Aquí está el análisis:\n{"bets": []}'
+        assert vision._extraer_json(crudo) == {"bets": []}
+
+    def test_con_frase_despues(self):
+        crudo = '{"bets": []}\n\nEspero que sirva.'
+        assert vision._extraer_json(crudo) == {"bets": []}
+
+    def test_envuelto_en_backticks(self):
+        assert vision._extraer_json('```json\n{"bets": []}\n```') == {"bets": []}
+
+    def test_sin_json_avisa(self):
+        import json as _json
+
+        with pytest.raises(_json.JSONDecodeError):
+            vision._extraer_json("No puedo leer esta imagen.")
+
+
+class TestElErrorMuestraLoQueContesto:
+    def test_incluye_la_respuesta_real(self):
+        """Si el modelo respondió en prosa, ese texto dice el problema
+        real. Sin verlo solo quedaba "probá con fotos más nítidas"."""
+        respuesta = {"choices": [{
+            "finish_reason": "stop",
+            "message": {"content": "No puedo identificar apuestas en esta imagen."},
+        }]}
+
+        with patch.object(vision.requests, "post") as post:
+            post.return_value.json.return_value = respuesta
+            post.return_value.raise_for_status.return_value = None
+            with pytest.raises(VisionAnalysisError) as e:
+                vision.analyze_bet_screenshot(b"imagen")
+
+        assert "No puedo identificar" in str(e.value)

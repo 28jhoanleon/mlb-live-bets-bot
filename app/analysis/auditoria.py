@@ -196,6 +196,7 @@ OBJETIVO_SEGURO = 90.0
 @dataclass
 class LegSegura:
     player: str
+    match: str
     market: str
     linea_original: str
     linea_nueva: str
@@ -251,6 +252,7 @@ def version_segura(legs_raw: list[dict], objetivo: float = OBJETIVO_SEGURO) -> t
 
         salidas.append(LegSegura(
             player=jugador,
+            match=leg.get("match") or "",
             market=mercado,
             linea_original=linea,
             linea_nueva=f"{elegida.side} {elegida.linea:g}",

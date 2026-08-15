@@ -21,6 +21,7 @@ from app.analysis.auditoria import (
 from app.analysis.daily_picks import find_daily_picks
 from app.db.database import get_active_bet
 from app.utils.logger import get_logger
+from app.utils.equipos import partido_corto
 from app.utils.market_labels import nombre_stake_texto
 from app.utils.telegram_helpers import edit_then_send_rest, escape_md
 
@@ -52,6 +53,20 @@ def _fmt_pick(pick) -> str:
             f"{pick.market_probability_pct}%")
 
 
+def _fmt_tramo_seguro(t) -> str:
+    mercado = nombre_stake_texto(t.market)
+    if t.cambio:
+        return (
+            f"🟢 {escape_md(t.player)} — _{escape_md(mercado)}_\n"
+            f"   {escape_md(t.linea_original)} → *{escape_md(t.linea_nueva)}* "
+            f"· {t.probabilidad}%"
+        )
+    return (
+        f"✅ {escape_md(t.player)} — _{escape_md(mercado)}_\n"
+        f"   {escape_md(t.linea_nueva)} · {t.probabilidad}% _(ya estaba bien)_"
+    )
+
+
 async def _responder_version_segura(aviso, legs_raw: list[dict]) -> None:
     """Baja las líneas hasta que cada tramo sea muy probable.
 
@@ -77,20 +92,21 @@ async def _responder_version_segura(aviso, legs_raw: list[dict]) -> None:
         return
 
     partes = [f"🛡 *Versión segura* (objetivo {OBJETIVO_SEGURO:g}% por tramo)", ""]
+
+    # Agrupado por partido: con 11 tramos de 5 juegos distintos, una
+    # lista plana es ilegible.
+    por_partido: dict[str, list] = {}
     for t in tramos:
-        mercado = nombre_stake_texto(t.market)
-        if t.cambio:
-            partes.append(
-                f"🟢 {escape_md(t.player)} — _{escape_md(mercado)}_\n"
-                f"   {escape_md(t.linea_original)} → *{escape_md(t.linea_nueva)}* "
-                f"· {t.probabilidad}%"
-            )
-        else:
-            partes.append(
-                f"✅ {escape_md(t.player)} — _{escape_md(mercado)}_\n"
-                f"   {escape_md(t.linea_nueva)} · {t.probabilidad}% "
-                f"_(ya estaba bien)_"
-            )
+        por_partido.setdefault(t.match or "Sin partido", []).append(t)
+
+    for partido, del_partido in por_partido.items():
+        if len(por_partido) > 1:
+            partes.append(f"*{escape_md(partido_corto(partido))}*")
+        for t in del_partido:
+            partes.append(_fmt_tramo_seguro(t))
+        if len(por_partido) > 1:
+            partes.append("")
+
 
     if combinada is not None:
         partes.append("")
@@ -120,7 +136,7 @@ async def mejorar_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     # Si hay varias apuestas, se elige cuál: antes se auditaban todas
     # juntas y el resultado mezclaba tramos de apuestas distintas.
-    if len(tickets) > 1 and not context.args:
+    if len(tickets) > 1 and False:
         lineas = ["Tenés *varias apuestas*. ¿Cuál mejoro?", ""]
         for i, t in enumerate(tickets, 1):
             legs = t.get("legs", [])
@@ -129,14 +145,17 @@ async def mejorar_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             extra = f" · paga {cuota}" if cuota else ""
             lineas.append(f"*{i}.* {escape_md(partido)} — {len(legs)} tramos{extra}")
         lineas.append("")
-        lineas.append("Mandá `/mejorar 2` para elegir.")
-        lineas.append("Para bajar líneas y buscar seguridad: `/mejorar 2 seguro`")
+        lineas.append("Mandá `/mejorar 2` para elegir una.")
+        lineas.append("O `/mejorar` a secas para verlas todas, agrupadas por partido.")
         await update.message.reply_text("\n".join(lineas), parse_mode=ParseMode.MARKDOWN)
         return
 
     elegido = tickets
     args = [a.lower() for a in (context.args or [])]
-    modo_seguro = "seguro" in args
+    # El modo seguro es el que se usa siempre: bajar líneas para que la
+    # apuesta entre. "arriesgado" queda como opción explícita para el
+    # comportamiento viejo (buscar reemplazos de mayor cuota).
+    modo_seguro = "arriesgado" not in args
     numeros = [a for a in args if a.isdigit()]
     if numeros:
         idx = int(numeros[0])
