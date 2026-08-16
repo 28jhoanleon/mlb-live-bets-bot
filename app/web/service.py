@@ -575,7 +575,32 @@ def estado_apuestas(chat_id: int) -> dict[str, Any]:
             ),
         })
 
-    return {"tickets": salida, "count": len(salida)}
+    # Orden útil: lo que está pasando ahora arriba, lo terminado abajo.
+    # Antes salían en orden de carga, así que un ticket de ayer podía
+    # tapar el que se está jugando.
+    def _prioridad(t):
+        if t.get("terminado"):
+            return 3
+        if t.get("caida"):
+            return 2
+        return 0 if t.get("live") else 1
+
+    salida.sort(key=_prioridad)
+
+    # Resumen para la cabecera: evita tener que sumar a ojo.
+    total_legs = sum(t["total"] for t in salida)
+    cumplidas_legs = sum(t["done"] for t in salida)
+
+    return {
+        "tickets": salida,
+        "count": len(salida),
+        "resumen": {
+            "legs_cumplidas": cumplidas_legs,
+            "legs_totales": total_legs,
+            "en_vivo": sum(1 for t in salida if t.get("live") and not t.get("terminado")),
+            "caidas": sum(1 for t in salida if t.get("caida")),
+        },
+    }
 
 
 def detalle_leg(player: str, market: str, line: str) -> dict[str, Any]:

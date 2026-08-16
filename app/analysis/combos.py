@@ -266,3 +266,33 @@ def find_dream_combos(
                 break
 
     return elegidas[:max_results]
+
+
+# --- Caché para la web ---------------------------------------------------
+#
+# Armar soñadoras es caro: barre la casa de apuestas y consulta la MLB API
+# por cada jugador. En Telegram se dispara cuando vos escribís el comando,
+# pero una pantalla web se abre y se refresca sola, así que sin caché cada
+# visita costaría un barrido entero.
+
+import time as _time
+
+_CACHE_SONADORAS: tuple[float, list[ValueCombo]] | None = None
+_TTL_SONADORAS = 600  # 10 minutos
+
+
+def sonadoras_cacheadas() -> list[ValueCombo]:
+    global _CACHE_SONADORAS
+
+    ahora = _time.monotonic()
+    if _CACHE_SONADORAS and ahora - _CACHE_SONADORAS[0] < _TTL_SONADORAS:
+        return _CACHE_SONADORAS[1]
+
+    combos = find_dream_combos()
+    _CACHE_SONADORAS = (ahora, combos)
+    return combos
+
+
+def limpiar_cache_sonadoras() -> None:
+    global _CACHE_SONADORAS
+    _CACHE_SONADORAS = None

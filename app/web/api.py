@@ -134,6 +134,105 @@ async def ticket_accion(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True})
 
 
+async def calibracion_api(request: Request) -> JSONResponse:
+    """Datos de calibración para el panel al pie de la página.
+
+    Vive en la web porque comparar predicho contra real se entiende de
+    un vistazo como barras y es ilegible como lista de números."""
+    if not _clave_ok(request.query_params.get("k")):
+        return JSONResponse({"detail": "Clave incorrecta"}, status_code=401)
+
+    chat_id = _chat_id()
+    if chat_id is None:
+        return JSONResponse({"detail": "Falta OWNER_CHAT_ID"}, status_code=500)
+
+    from app.db.database import calibracion, resumen_calibracion
+
+    try:
+        return JSONResponse({
+            "resumen": await asyncio.to_thread(resumen_calibracion, chat_id),
+            "tramos": await asyncio.to_thread(calibracion, chat_id),
+        })
+    except Exception:
+        log.exception("Error trayendo la calibración")
+        return JSONResponse({"detail": "No pude leer la calibración"}, status_code=500)
+
+
+async def picks_api(request: Request) -> JSONResponse:
+    """Picks del día para la pantalla de armado.
+
+    Usa caché de 10 minutos: sin eso, cada visita dispararía un barrido
+    completo de la casa de apuestas y de la MLB API."""
+    if not _clave_ok(request.query_params.get("k")):
+        return JSONResponse({"detail": "Clave incorrecta"}, status_code=401)
+
+    from app.analysis.daily_picks import picks_cacheados
+    from app.utils.equipos import partido_corto
+    from app.utils.market_labels import nombre_stake_texto
+    from app.utils.tiempo import formato_hora_fecha
+
+    try:
+        picks = await asyncio.to_thread(picks_cacheados)
+    except Exception:
+        log.exception("Error trayendo los picks del día")
+        return JSONResponse({"detail": "No pude traer los picks"}, status_code=500)
+
+    return JSONResponse({"picks": [
+        {
+            "id": f"{p.player}|{p.market}|{p.line}",
+            "player": p.player,
+            "match": partido_corto(p.match),
+            "market": nombre_stake_texto(p.market),
+            "line": p.line,
+            "odds": p.odds,
+            "prob": p.our_probability_pct,
+            "mercado_paga": p.market_probability_pct,
+            "hora": formato_hora_fecha(p.commence_time) if p.commence_time else "",
+        }
+        for p in picks
+    ]})
+
+
+async def sonadoras_api(request: Request) -> JSONResponse:
+    """Soñadoras para la web. Cacheadas 10 minutos: armarlas barre la
+    casa de apuestas y la MLB API entera."""
+    if not _clave_ok(request.query_params.get("k")):
+        return JSONResponse({"detail": "Clave incorrecta"}, status_code=401)
+
+    from app.analysis.combos import sonadoras_cacheadas
+    from app.utils.equipos import partido_corto
+    from app.utils.market_labels import nombre_stake_texto
+    from app.utils.tiempo import formato_hora_fecha
+
+    try:
+        combos = await asyncio.to_thread(sonadoras_cacheadas)
+    except Exception as exc:
+        log.exception("Error armando soñadoras para la web")
+        return JSONResponse({"detail": str(exc)}, status_code=500)
+
+    return JSONResponse({"sonadoras": [
+        {
+            "prob": c.combined_probability_pct,
+            "cuota": c.combined_odds,
+            "valor": c.expected_value_pct,
+            "mismo_partido": c.same_game,
+            "legs": [
+                {
+                    "player": l.player,
+                    "match": partido_corto(l.match),
+                    "market": nombre_stake_texto(l.market),
+                    "line": l.line,
+                    "odds": l.odds,
+                    "prob": l.probability_pct,
+                    "hora": formato_hora_fecha(l.commence_time) if l.commence_time else "",
+                }
+                for l in c.legs
+            ],
+        }
+        for c in combos
+    ]})
+
+
 async def index(request: Request) -> FileResponse:
     return FileResponse(ESTATICOS / "index.html")
 
@@ -154,5 +253,8 @@ app = Starlette(
         Route("/api/bets", bets),
         Route("/api/leg-detail", leg_detail),
         Route("/api/ticket-accion", ticket_accion),
+        Route("/api/calibracion", calibracion_api),
+        Route("/api/picks", picks_api),
+        Route("/api/sonadoras", sonadoras_api),
     ]
 )

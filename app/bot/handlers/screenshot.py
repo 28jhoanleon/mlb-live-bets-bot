@@ -377,13 +377,15 @@ async def _procesar_y_responder(
         for t in analysis.get("bets", []):
             t["borrador"] = True
 
-    save_active_bet(chat_id, analysis)
-    if guardar:
-        try:
-            log_bet_analysis(chat_id, analysis)
-        except Exception:
-            log.exception("No pude guardar el historial (no bloquea la respuesta)")
-
+    # IMPORTANTE: el análisis va ANTES de guardar. _format_full_analysis
+    # calcula la probabilidad de cada leg y la escribe en el propio dict
+    # (leg["prob_estimada"]), que es el único número honesto para medir
+    # calibración después: la estimación hecha ANTES de que se jugara.
+    #
+    # Estaba al revés: se guardaba primero y se calculaba después, así que
+    # ese campo se escribía en memoria sobre un dict ya persistido y nunca
+    # llegaba a la base. Resultado: /calibracion siempre vacío, aunque las
+    # apuestas se resolvieran bien.
     try:
         result_text = await _format_full_analysis(analysis)
         if not guardar:
@@ -394,6 +396,13 @@ async def _procesar_y_responder(
     except Exception:
         log.exception("Error inesperado calculando probabilidades")
         result_text = "⚠️ Detecté la apuesta pero hubo un error calculando probabilidades."
+
+    save_active_bet(chat_id, analysis)
+    if guardar:
+        try:
+            log_bet_analysis(chat_id, analysis)
+        except Exception:
+            log.exception("No pude guardar el historial (no bloquea la respuesta)")
 
     # Confirmación de recepción: cuántas capturas entraron y cuántas
     # apuestas salieron de ellas.

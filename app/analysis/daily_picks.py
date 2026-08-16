@@ -314,3 +314,33 @@ def find_daily_picks(
         seen.add(dedup_key)
         unique_picks.append(p)
     return unique_picks
+
+
+# --- Caché de picks para la web ----------------------------------------
+#
+# La pantalla de armado consulta la misma lista cada vez que alguien la
+# abre. Sin caché, cada visita dispararía un barrido completo (llamadas
+# a la casa de apuestas + a la MLB API por cada jugador), que es
+# justamente lo que nos agotó la cuota una vez. Los picks del día
+# cambian lento: 10 minutos de caché los mantiene frescos y baja el
+# costo a una consulta cada tanto en vez de una por visita.
+
+_CACHE_PICKS: tuple[float, list[DailyPick]] | None = None
+_TTL_PICKS = 600  # 10 minutos
+
+
+def picks_cacheados() -> list[DailyPick]:
+    global _CACHE_PICKS
+
+    ahora = time.monotonic()
+    if _CACHE_PICKS and ahora - _CACHE_PICKS[0] < _TTL_PICKS:
+        return _CACHE_PICKS[1]
+
+    picks = find_daily_picks()
+    _CACHE_PICKS = (ahora, picks)
+    return picks
+
+
+def limpiar_cache_picks() -> None:
+    global _CACHE_PICKS
+    _CACHE_PICKS = None
