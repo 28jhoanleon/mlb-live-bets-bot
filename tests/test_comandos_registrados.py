@@ -8,8 +8,8 @@ que ningún comando desaparezca sin que nadie se entere."""
 from telegram.ext import CommandHandler, MessageHandler
 
 ESPERADOS = {
-    "start", "help", "miid", "games", "today", "live", "props",
-    "strikeouts", "hits", "hr", "analyze", "compare", "value",
+    "start", "help", "miid",
+    "value",
     "sonadora", "sonadoras", "combos", "refresh", "nueva",
     "historial", "calibracion", "limpiar", "borrar", "mejorar", "proveedor",
 }

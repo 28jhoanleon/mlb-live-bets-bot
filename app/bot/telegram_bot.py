@@ -3,19 +3,14 @@ de todos los handlers. main.py solo llama a build_app().run_polling()."""
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 from app.bot.handlers import (
-    analyze,
     borrar,
     calibracion,
     combos_historial,
-    compare,
-    games,
     history,
     limpiar,
-    live,
     mejorar,
     miid,
     proveedor,
-    props,
     screenshot,
     sonadora,
     start,
@@ -58,15 +53,6 @@ MENU_COMANDOS = [
     ("sonadoras", "Combinadas de cuota alta con valor"),
     ("combos", "Soñadoras sugeridas y si se dieron"),
     ("value", "Picks con ventaja sobre la cuota"),
-    ("analyze", "Analiza un jugador puntual"),
-    ("compare", "Compara dos jugadores"),
-    ("live", "Partidos en curso"),
-    ("today", "Partidos de hoy"),
-    ("games", "Calendario"),
-    ("props", "Props disponibles de un partido"),
-    ("strikeouts", "Ponches de los abridores de hoy"),
-    ("hits", "Mejores props de hits"),
-    ("hr", "Mejores props de jonrones"),
     ("refresh", "Actualiza tu apuesta sin mandar la foto"),
     ("borrar", "Saca una apuesta de la lista"),
     ("nueva", "Borra todas las apuestas guardadas"),
@@ -105,15 +91,6 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("start", start.start))
     app.add_handler(CommandHandler("miid", miid.miid))
     app.add_handler(CommandHandler("help", start.help_command))
-    app.add_handler(CommandHandler("games", games.games))
-    app.add_handler(CommandHandler("today", games.today))
-    app.add_handler(CommandHandler("live", live.live))
-    app.add_handler(CommandHandler("props", props.props))
-    app.add_handler(CommandHandler("strikeouts", props.strikeouts))
-    app.add_handler(CommandHandler("hits", props.hits))
-    app.add_handler(CommandHandler("hr", props.home_runs))
-    app.add_handler(CommandHandler("analyze", analyze.analyze))
-    app.add_handler(CommandHandler("compare", compare.compare))
     app.add_handler(CommandHandler("value", value.value))
     app.add_handler(CommandHandler("sonadora", sonadora.sonadora))
     app.add_handler(CommandHandler("sonadoras", sonadora.sonadora))
