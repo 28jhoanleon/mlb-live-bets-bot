@@ -75,3 +75,52 @@ class TestPanelDeCalibracionEnLaWeb:
         html = pathlib.Path("app/web/static/index.html").read_text()
         assert 'id="calibracion"' in html and "hidden" in html
         assert "if (!res.total) return;" in html
+
+
+class TestCabeceraSeLimpia:
+    """Bug real: después de borrar todas las apuestas, la cabecera
+    seguía diciendo "3 DE 9 TRAMOS · 1 CAÍDA" con la lista vacía. El
+    código salía temprano y nunca actualizaba el resumen."""
+
+    def test_se_actualiza_aunque_no_haya_apuestas(self):
+        import pathlib
+
+        html = pathlib.Path("app/web/static/index.html").read_text()
+        vacio = html.index("Todavía no hay apuestas")
+        # Entre el mensaje de vacío y el return tiene que estar la
+        # limpieza de la cabecera.
+        tramo = html[vacio:vacio + 700]
+        assert "actualizarCabecera(null)" in tramo
+
+    def test_con_resumen_vacio_vuelve_al_titulo_normal(self):
+        import pathlib
+
+        html = pathlib.Path("app/web/static/index.html").read_text()
+        assert "if (!r || !r.legs_totales)" in html
+
+
+class TestBarraDeAvance:
+    """Ver de un vistazo cuánto falta, sin hacer la cuenta mental
+    entre "3" y "8"."""
+
+    def test_existe_la_barra(self):
+        import pathlib
+
+        html = pathlib.Path("app/web/static/index.html").read_text()
+        assert "_barraTicket" in html
+        assert ".tbar__pista" in html
+
+    def test_una_caida_se_marca_distinto(self):
+        """Da igual cuánto avanzó: si ya no puede darse, mostrar 3 de 8
+        en verde sería engañoso."""
+        import pathlib
+
+        html = pathlib.Path("app/web/static/index.html").read_text()
+        assert "Ya no puede darse" in html
+        assert ".tbar.mal .tbar__pista i" in html
+
+    def test_avisa_cuando_se_dio_entera(self):
+        import pathlib
+
+        html = pathlib.Path("app/web/static/index.html").read_text()
+        assert "¡Se dio entera!" in html

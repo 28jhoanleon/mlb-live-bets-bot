@@ -191,6 +191,17 @@ body{
 .carrito.mal .carrito__prob{color:var(--clay)}
 .carrito__prob{font-weight:600}
 .carrito__cuota{color:var(--amber);font-weight:600}
+/* Barra de avance de la combinada */
+.tbar{display:flex;align-items:center;gap:9px;padding:8px 15px 10px}
+.tbar__pista{flex:1;height:5px;background:var(--line);border-radius:3px;overflow:hidden}
+.tbar__pista i{
+  display:block;height:100%;border-radius:3px;background:var(--green);
+  transition:width .4s ease;
+}
+.tbar.mal .tbar__pista i{background:var(--clay);opacity:.45}
+.tbar.fin .tbar__pista i{background:var(--muted)}
+.tbar__txt{font-size:11px;color:var(--muted);flex:none;letter-spacing:.02em}
+.tbar.mal .tbar__txt{color:var(--clay)}
 .acciones{display:flex;gap:8px;margin:0 15px 12px}
 .accion{
   flex:1;text-align:center;padding:9px;border:1px dashed var(--line);
@@ -716,6 +727,7 @@ function ticket(t, i){
             <button class="dbtn no" onclick="accionTicket('${esc(t.id)}','descartar',this)">Descartar</button>
           </span>
         </div>` : ''}
+      ${_barraTicket(t)}
       <div class="ticket__body ${grupos.length > 1 ? 'multi' : ''}">
         ${grupos.map((g, idx) => grupo(g, idx, grupos.length)).join('')}
       </div>
@@ -741,7 +753,12 @@ async function accionTicket(id, accion, btn){
 }
 
 function actualizarCabecera(r){
-  if (!r) return;
+  if (!r || !r.legs_totales) {
+    document.title = 'MLB Live Bets';
+    const vacio = document.querySelector('.top .sub');
+    if (vacio) vacio.textContent = 'EN VIVO';
+    return;
+  }
 
   // Título de la pestaña: con el celular en otra app o la pestaña de
   // fondo, esto solo ya dice cómo viene todo sin abrir nada.
@@ -1012,6 +1029,31 @@ async function verMejora(id, btn){
   }
 }
 
+// Barra de avance de la combinada: cuántos tramos se dieron sobre el
+// total. Es lo primero que uno quiere saber y hasta ahora había que
+// leer el "3 de 8" y hacer la cuenta mental.
+function _barraTicket(t){
+  const total = t.total || 0;
+  if (!total) return '';
+
+  const hechos = t.done || 0;
+  const faltan = total - hechos;
+  const pct = Math.round(hechos / total * 100);
+
+  // Rota: no importa cuánto avanzó, ya no puede darse.
+  const estado = t.caida ? 'mal' : (t.terminado ? 'fin' : 'viva');
+  const texto = t.caida
+    ? 'Ya no puede darse'
+    : (faltan === 0 ? '¡Se dio entera!'
+      : `Faltan ${faltan} tramo${faltan > 1 ? 's' : ''}`);
+
+  return `
+    <div class="tbar ${estado}">
+      <div class="tbar__pista"><i style="width:${t.caida ? 100 : pct}%"></i></div>
+      <span class="tbar__txt">${esc(texto)}</span>
+    </div>`;
+}
+
 function toggleTicket(el){
   const clave = el.dataset.clave;
   const colapsado = el.classList.toggle('is-collapsed');
@@ -1041,8 +1083,13 @@ async function cargar(){
 
     const data = await r.json();
     if(!data.tickets || !data.tickets.length){
-      app.innerHTML = '<div class="empty"><b>Todavía no hay apuestas</b>Mandale una captura al bot en Telegram y aparece acá.</div>';
+      app.innerHTML = '<div class="empty"><b>Todavía no hay apuestas</b>'
+        + 'Subí una captura con el botón de arriba, o mandásela al bot en Telegram.</div>';
       foot.textContent = '';
+      // Sin esto quedaba el resumen de la carga anterior: la cabecera
+      // seguía diciendo "3 de 9 tramos" con la lista ya vacía.
+      actualizarCabecera(null);
+      cargarCalibracion();
       return;
     }
 
