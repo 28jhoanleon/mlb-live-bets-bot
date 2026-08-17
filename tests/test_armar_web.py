@@ -147,3 +147,50 @@ class TestSonadorasEnLaWeb:
         html = pathlib.Path("app/web/static/index.html").read_text()
         assert "Hoy no hay ninguna que pase los filtros" in html
         assert "forzar una sería inventarla" in html
+
+
+class TestPartidoEnCursoSinDatos:
+    """Bug reportado: partidos que "de la nada dejan de estar en vivo" y
+    muestran el histórico como si no estuviera pasando nada.
+
+    La MLB Stats API falla de a ratos (403 intermitentes en producción).
+    Una sola consulta fallida dejaba live_data en None y la web caía al
+    promedio histórico sin avisar."""
+
+    def test_guarda_el_ultimo_estado_bueno(self):
+        import pathlib
+
+        fuente = pathlib.Path("app/web/service.py").read_text()
+        assert "_ULTIMO_VIVO" in fuente
+        assert "Usando el último estado en vivo conocido" in fuente
+
+    def test_la_copia_tiene_vencimiento(self):
+        """Datos de hace un minuto sirven; de hace una hora, no."""
+        from app.web.service import _VIGENCIA_ULTIMO_VIVO
+
+        assert 60 <= _VIGENCIA_ULTIMO_VIVO <= 900
+
+    def test_avisa_cuando_no_hay_dato_en_vivo(self):
+        """Mostrar el histórico sin aclarar hace parecer que el partido
+        no empezó."""
+        import pathlib
+
+        fuente = pathlib.Path("app/web/service.py").read_text()
+        assert "Sin conexión con el dato en vivo" in fuente
+
+
+class TestPrecalentado:
+    def test_el_job_deja_listos_los_picks(self):
+        """Sin esto, la primera visita a Armar o Soñadoras espera el
+        barrido completo con la pantalla en blanco."""
+        import pathlib
+
+        fuente = pathlib.Path("app/jobs/registrar_resueltas.py").read_text()
+        assert "picks_cacheados" in fuente
+        assert "sonadoras_cacheadas" in fuente
+
+    def test_un_fallo_al_precalentar_no_rompe_el_job(self):
+        import pathlib
+
+        fuente = pathlib.Path("app/jobs/registrar_resueltas.py").read_text()
+        assert "No pude precalentar" in fuente

@@ -791,6 +791,10 @@ function cambiarVista(cual){
 async function cargarPicks(){
   if (_picksCargados) return;
   const estado = document.getElementById('armarEstado');
+  // La primera vez del día puede tardar: barre la casa de apuestas y
+  // consulta la MLB API por cada jugador. Decirlo evita que parezca
+  // colgado.
+  estado.textContent = 'Buscando picks del día… puede tardar hasta un minuto la primera vez.';
   try {
     const r = await fetch(`/api/picks?k=${encodeURIComponent(KEY)}`, {cache:'no-store'});
     const d = await r.json();
@@ -859,6 +863,7 @@ let _sonadorasCargadas = false;
 async function cargarSonadoras(){
   if (_sonadorasCargadas) return;
   const estado = document.getElementById('sonEstado');
+  estado.textContent = 'Armando soñadoras… puede tardar hasta un minuto la primera vez.';
 
   try {
     const r = await fetch(`/api/sonadoras?k=${encodeURIComponent(KEY)}`, {cache:'no-store'});

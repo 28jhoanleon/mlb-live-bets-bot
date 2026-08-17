@@ -10,6 +10,7 @@ de mostrarla.
 """
 from __future__ import annotations
 
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -34,6 +35,7 @@ from app.db.database import (
     registrar_legs_resueltas,
 )
 from app.mlb.estados import CON_DATOS as _CON_DATOS
+from app.mlb.estados import EN_CURSO as _EN_CURSO
 from app.mlb.estados import TERMINADO as _TERMINADO
 from app.mlb.players import get_hitting_split_vs_hand, get_season_hitting_stats, search_player
 from app.analysis.probability import LegEstimate
@@ -354,6 +356,15 @@ def _leg_historica(leg: dict) -> dict[str, Any]:
     }
 
 
+# Último estado en vivo bueno de cada partido. La MLB Stats API falla de
+# a ratos (vimos 403 intermitentes en producción), y sin esto una sola
+# consulta fallida hacía que un partido EN CURSO mostrara de golpe el
+# promedio histórico, como si no estuviera pasando nada. Con la copia
+# reciente el bache se disimula y la vista no parpadea.
+_ULTIMO_VIVO: dict[str, tuple[float, tuple]] = {}
+_VIGENCIA_ULTIMO_VIVO = 300  # 5 minutos
+
+
 def _datos_del_partido(
     match_text: str, match_datetime: str | None = None
 ) -> tuple[dict | None, tuple | None]:
@@ -371,10 +382,23 @@ def _datos_del_partido(
 
     live_data = None
     if partido and partido.get("status") in _CON_DATOS:
+        clave = f"{partido.get('game_pk')}"
         try:
             live_data = get_live_tracking_for_match(match_text, match_datetime)
+            if live_data:
+                _ULTIMO_VIVO[clave] = (time.monotonic(), live_data)
         except Exception:
             log.exception("Error trayendo el estado en vivo")
+
+        if not live_data:
+            # Reusar el último estado bueno antes de rendirse: es
+            # preferible mostrar datos de hace un minuto que volver al
+            # promedio histórico y hacer parecer que el partido terminó.
+            guardado = _ULTIMO_VIVO.get(clave)
+            if guardado and time.monotonic() - guardado[0] < _VIGENCIA_ULTIMO_VIVO:
+                live_data = guardado[1]
+                log.info("Usando el último estado en vivo conocido de %s", match_text)
+
     return partido, live_data
 
 
@@ -393,12 +417,29 @@ def _armar_grupo(match_text: str, legs_raw: list[dict]) -> dict[str, Any]:
     )
     partido, live_data = _datos_del_partido(match_text, match_datetime)
 
+    # ¿El partido está EN CURSO pero no pudimos traer sus datos? Hay que
+    # decirlo: mostrar el histórico sin aclarar nada hace parecer que el
+    # partido no empezó o ya terminó.
+    en_curso_sin_datos = (
+        not live_data
+        and partido is not None
+        and partido.get("status") in _EN_CURSO
+    )
+
     def _procesar_leg(leg: dict) -> dict[str, Any]:
         resultado = None
         if live_data:
             boxscore, live_state = live_data
             resultado = _leg_en_vivo(leg, boxscore, live_state)
-        return resultado or _leg_historica(leg)
+        if resultado:
+            return resultado
+
+        historica = _leg_historica(leg)
+        if en_curso_sin_datos:
+            historica["note"] = (
+                "Sin conexión con el dato en vivo · muestro su forma reciente"
+            )
+        return historica
 
     # Las legs en vivo no pegan a la red (ya tenemos boxscore/live_state
     # del grupo). Las que caen al histórico sí -2 llamadas cada una-, y

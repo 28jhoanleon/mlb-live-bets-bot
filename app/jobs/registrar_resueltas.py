@@ -41,3 +41,23 @@ async def registrar_resueltas_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         except Exception:
             # Un chat que falla no puede frenar a los demás.
             log.warning("Fallo recalculando el chat %s", chat_id, exc_info=True)
+
+    await _precalentar_web()
+
+
+async def _precalentar_web() -> None:
+    """Deja listos los picks y las soñadoras para la web.
+
+    Sin esto, la primera visita a "Armar" o "Soñadoras" dispara el
+    barrido completo y hay que esperarlo con la pantalla en blanco.
+    Calculándolo acá, el usuario casi siempre encuentra el resultado ya
+    hecho: el trabajo pasa a hacerse mientras nadie mira.
+    """
+    from app.analysis.combos import sonadoras_cacheadas
+    from app.analysis.daily_picks import picks_cacheados
+
+    for nombre, funcion in (("picks", picks_cacheados), ("soñadoras", sonadoras_cacheadas)):
+        try:
+            await asyncio.to_thread(funcion)
+        except Exception:
+            log.info("No pude precalentar %s", nombre, exc_info=True)
