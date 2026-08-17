@@ -191,6 +191,27 @@ body{
 .carrito.mal .carrito__prob{color:var(--clay)}
 .carrito__prob{font-weight:600}
 .carrito__cuota{color:var(--amber);font-weight:600}
+.acciones{display:flex;gap:8px;margin:0 15px 12px}
+.accion{
+  flex:1;text-align:center;padding:9px;border:1px dashed var(--line);
+  border-radius:7px;color:var(--muted);font-size:12.5px;cursor:pointer;
+}
+.accion:active{border-color:var(--muted);color:var(--chalk)}
+.mejorar{
+  border:none;background:transparent;font-size:14px;cursor:pointer;
+  padding:0 2px;margin-left:6px;opacity:.55;
+}
+.mejorar:hover{opacity:1}
+.mejora{padding:11px 14px;border-top:1px solid var(--line);background:var(--surface-2)}
+.mejora__head{
+  font-size:11px;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--muted);margin-bottom:7px;
+}
+.mtramo{font-size:12.5px;line-height:1.5;margin-bottom:3px}
+.mtramo.mal{color:var(--clay)}
+.mtramo.ok{color:var(--green)}
+.mtramo i{color:var(--muted);font-style:normal;font-size:11px}
+.mejora__tot{margin-top:7px;font-size:12.5px;color:var(--chalk)}
 .son{margin:0 14px 12px;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
 .son__head{
   display:flex;justify-content:space-between;align-items:center;
@@ -485,6 +506,17 @@ body{
   <button class="tab" data-vista="armar" onclick="cambiarVista('armar')">Armar</button>
   <button class="tab" data-vista="sonadoras" onclick="cambiarVista('sonadoras')">Soñadoras</button>
 </nav>
+<div class="acciones">
+  <label class="accion">
+    <input type="file" accept="image/*" multiple hidden onchange="subirCapturas(this,false)">
+    📸 Subir captura
+  </label>
+  <label class="accion">
+    <input type="file" accept="image/*" multiple hidden onchange="subirCapturas(this,true)">
+    🧪 Probar sin guardar
+  </label>
+</div>
+<p id="subiendo" class="foot" hidden></p>
 <main id="app"></main>
 <main id="armar" hidden>
   <p class="foot" id="armarEstado">Cargando picks…</p>
@@ -670,8 +702,10 @@ function ticket(t, i){
           ${t.terminado ? '<span class="final">Terminada</span>'
             : (t.caida ? '<span class="final dead">Ya no puede darse</span>' : '')}
           <span class="chevron">⌄</span>
+          <button class="mejorar" title="Versión segura"
+                  onclick="event.stopPropagation();verMejora('${esc(t.id)}',this)">🛡</button>
           <button class="quitar" title="Sacar de la lista"
-                  onclick="event.stopPropagation();accionTicket('${esc(clave)}','descartar',this)">×</button>
+                  onclick="event.stopPropagation();accionTicket('${esc(t.id)}','descartar',this)">×</button>
         </div>
       </div>
       ${t.borrador ? `
@@ -900,6 +934,81 @@ async function cargarSonadoras(){
     }).join('');
   } catch (e) {
     estado.textContent = 'No pude armarlas: ' + e.message;
+  }
+}
+
+// --- Subir capturas desde la web -------------------------------------
+// Con esto la web deja de depender de Telegram para cargar una apuesta.
+async function subirCapturas(input, borrador){
+  const archivos = Array.from(input.files || []);
+  input.value = '';
+  if (!archivos.length) return;
+
+  const aviso = document.getElementById('subiendo');
+  aviso.hidden = false;
+  aviso.textContent = `Leyendo ${archivos.length} captura${archivos.length > 1 ? 's' : ''}…`;
+
+  try {
+    const imagenes = await Promise.all(archivos.map(a => new Promise((ok, mal) => {
+      const fr = new FileReader();
+      fr.onload = () => ok(fr.result);
+      fr.onerror = mal;
+      fr.readAsDataURL(a);
+    })));
+
+    const r = await fetch(`/api/captura?k=${encodeURIComponent(KEY)}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({imagenes, borrador}),
+    });
+    const d = await r.json();
+    if (!r.ok || !d.ok) throw new Error(d.error || d.detail || 'no pude leerla');
+
+    aviso.textContent = `Listo: ${d.legs} tramos en ${d.tickets} apuesta(s)`
+      + (borrador ? ' · guardada como borrador' : '');
+    await cargar();
+    setTimeout(() => { aviso.hidden = true; }, 4000);
+  } catch (e) {
+    aviso.textContent = 'No pude leerla: ' + e.message;
+  }
+}
+
+// --- Versión segura desde la web -------------------------------------
+async function verMejora(id, btn){
+  const original = btn.textContent;
+  btn.textContent = '…';
+  try {
+    const r = await fetch(`/api/mejorar?k=${encodeURIComponent(KEY)}&id=${encodeURIComponent(id)}`,
+                          {cache:'no-store'});
+    const d = await r.json();
+    if (!r.ok || !d.ok) throw new Error(d.error || d.detail || 'error');
+
+    const filas = d.tramos.map(t => {
+      if (t.no_alcanza) return `<div class="mtramo mal">❌ <b>${esc(t.player)}</b> — `
+        + `ni con ${esc(t.linea_nueva)} pasa del ${esc(t.prob)}% · <i>sacala</i></div>`;
+      if (t.cambio) return `<div class="mtramo ok">🟢 <b>${esc(t.player)}</b> — `
+        + `${esc(t.linea_original)} → <b>${esc(t.linea_nueva)}</b> · ${esc(t.prob)}%</div>`;
+      return `<div class="mtramo">✅ <b>${esc(t.player)}</b> — `
+        + `${esc(t.linea_nueva)} · ${esc(t.prob)}% <i>(ya estaba bien)</i></div>`;
+    }).join('');
+
+    const ticket = btn.closest('.ticket');
+    let panel = ticket.querySelector('.mejora');
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.className = 'mejora';
+      ticket.appendChild(panel);
+    }
+    panel.innerHTML = `
+      <div class="mejora__head">Versión segura · objetivo ${esc(d.objetivo)}% por tramo</div>
+      ${filas}
+      ${d.combinada != null
+        ? `<div class="mejora__tot">Que entren todas: <b>${esc(d.combinada)}%</b></div>`
+        : '<div class="mejora__tot">Ningún tramo llega al objetivo.</div>'}`;
+  } catch (e) {
+    alert('No pude analizarla: ' + e.message);
+  } finally {
+    btn.textContent = original;
   }
 }
 

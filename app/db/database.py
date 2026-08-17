@@ -482,25 +482,51 @@ def confirmar_borrador(chat_id: int, ticket_id: str, calcular_id) -> bool:
 
     `calcular_id` se recibe como parámetro para no importar la capa web
     desde la base (evita un ciclo de imports)."""
-    actual, tickets = _tickets_de(chat_id)
-    for t in tickets:
+    from app.analysis.tickets import normalize
+
+    actual, _ = _tickets_de(chat_id)
+    if not actual:
+        return False
+
+    # Misma razón que en descartar_ticket: los ids que ve el usuario se
+    # calculan sobre la vista normalizada.
+    vista = normalize(actual)
+    encontrado = False
+    for t in vista:
         if calcular_id(t, t.get("legs", [])) == ticket_id and t.get("borrador"):
             t.pop("borrador", None)
-            save_active_bet(chat_id, actual)
-            return True
-    return False
+            encontrado = True
+
+    if encontrado:
+        save_active_bet(chat_id, {**actual, "bets": vista})
+    return encontrado
 
 
 def descartar_ticket(chat_id: int, ticket_id: str, calcular_id) -> bool:
-    """Saca un ticket concreto de la apuesta activa, por su id."""
-    actual, tickets = _tickets_de(chat_id)
-    for i, t in enumerate(tickets):
-        if calcular_id(t, t.get("legs", [])) == ticket_id:
-            tickets.pop(i)
-            if tickets:
-                actual["bets"] = tickets
-                save_active_bet(chat_id, actual)
-            else:
-                clear_active_bet(chat_id)
-            return True
-    return False
+    """Saca un ticket concreto de la apuesta activa, por su id.
+
+    Ojo con esto: la web NO muestra los tickets tal como están guardados.
+    Antes de mostrarlos pasan por normalize(), que puede partir uno en
+    varios (uno por partido). Así que los ids que ve el usuario se
+    calculan sobre la versión normalizada y no existen en la guardada.
+    Buscar solo en lo guardado hacía que el botón × no encontrara nada.
+
+    Por eso se compara contra la MISMA vista que ve el usuario, y se
+    reescribe la apuesta con lo que quedó.
+    """
+    from app.analysis.tickets import normalize
+
+    actual, _ = _tickets_de(chat_id)
+    if not actual:
+        return False
+
+    vista = normalize(actual)
+    quedan = [t for t in vista if calcular_id(t, t.get("legs", [])) != ticket_id]
+    if len(quedan) == len(vista):
+        return False  # ese id no está en pantalla
+
+    if quedan:
+        save_active_bet(chat_id, {**actual, "bets": quedan})
+    else:
+        clear_active_bet(chat_id)
+    return True

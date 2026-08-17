@@ -194,3 +194,44 @@ class TestPrecalentado:
 
         fuente = pathlib.Path("app/jobs/registrar_resueltas.py").read_text()
         assert "No pude precalentar" in fuente
+
+
+class TestWebAutosuficiente:
+    """La web ya no depende de Telegram: se puede cargar una apuesta,
+    verla, mejorarla y borrarla sin abrir el chat."""
+
+    def test_se_puede_subir_captura(self):
+        import pathlib
+
+        fuente = pathlib.Path("app/web/api.py").read_text()
+        assert '"/api/captura"' in fuente
+        assert 'methods=["POST"]' in fuente
+
+    def test_las_imagenes_van_en_base64(self):
+        """Recibir multipart pediría una dependencia nueva; el proyecto
+        evita sumar librerías salvo que hagan falta de verdad."""
+        import pathlib
+
+        fuente = pathlib.Path("app/web/api.py").read_text()
+        assert "base64.b64decode" in fuente
+
+    def test_se_puede_mejorar_desde_la_web(self):
+        import pathlib
+
+        assert '"/api/mejorar"' in pathlib.Path("app/web/api.py").read_text()
+
+    def test_el_borrador_tambien_desde_la_web(self):
+        import pathlib
+
+        html = pathlib.Path("app/web/static/index.html").read_text()
+        assert "Probar sin guardar" in html
+
+    def test_una_captura_ilegible_no_borra_lo_guardado(self):
+        """Si la lectura falla, la apuesta que ya estaba tiene que
+        quedar intacta."""
+        import pathlib
+
+        fuente = pathlib.Path("app/web/service.py").read_text()
+        i_check = fuente.index('if not leidos:')
+        i_save = fuente.index("save_active_bet(chat_id, analisis)")
+        assert i_check < i_save, "se guarda antes de verificar que se leyó algo"

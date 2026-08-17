@@ -698,3 +698,89 @@ def _sugerencias_para(player: str, market: str, line: str) -> dict[str, Any]:
             if mejor else None
         ),
     }
+
+
+# --- Entrada desde la web ------------------------------------------------
+
+def guardar_captura(chat_id: int, imagenes: list[bytes], borrador: bool = False) -> dict[str, Any]:
+    """Analiza capturas subidas desde la web y las guarda.
+
+    Es el mismo camino que usa el bot de Telegram, pero sin Telegram:
+    con esto la web deja de depender del chat para cargar una apuesta.
+    """
+    from app.ai.vision import analyze_bet_screenshot
+    from app.analysis.tickets import merge_tickets, to_storage
+    from app.db.database import log_bet_analysis, save_active_bet
+
+    leidos: list[list[dict]] = []
+    errores: list[str] = []
+    for imagen in imagenes:
+        try:
+            leidos.append(normalize(analyze_bet_screenshot(imagen)))
+        except Exception as exc:
+            log.warning("No pude leer una captura subida por la web: %s", exc)
+            errores.append(str(exc))
+
+    if not leidos:
+        return {"ok": False, "error": errores[0] if errores else "No pude leer la captura."}
+
+    previos = normalize(get_active_bet(chat_id) or {}) if not borrador else []
+    tickets = merge_tickets([previos, *leidos]) if previos else merge_tickets(leidos)
+
+    analisis = to_storage(tickets)
+    if borrador:
+        for t in analisis.get("bets", []):
+            t["borrador"] = True
+
+    # La probabilidad estimada de cada leg se calcula al armar el estado
+    # (la primera vez que se muestra), igual que en el bot.
+    save_active_bet(chat_id, analisis)
+    if not borrador:
+        try:
+            log_bet_analysis(chat_id, analisis)
+        except Exception:
+            log.exception("No pude guardar el historial")
+
+    return {
+        "ok": True,
+        "tickets": len(tickets),
+        "legs": sum(len(t.get("legs", [])) for t in tickets),
+        "errores": errores,
+    }
+
+
+def mejorar_ticket(chat_id: int, ticket_id: str | None = None) -> dict[str, Any]:
+    """Versión segura de una apuesta guardada, para la web."""
+    from app.analysis.auditoria import OBJETIVO_SEGURO, version_segura
+
+    guardada = get_active_bet(chat_id)
+    tickets = normalize(guardada or {})
+    if not tickets:
+        return {"ok": False, "error": "No tenés apuestas cargadas."}
+
+    if ticket_id:
+        tickets = [t for t in tickets if _ticket_id(t, t.get("legs", [])) == ticket_id]
+        if not tickets:
+            return {"ok": False, "error": "No encontré esa apuesta."}
+
+    legs = [leg for t in tickets for leg in t.get("legs", [])]
+    tramos, combinada = version_segura(legs)
+
+    return {
+        "ok": True,
+        "objetivo": OBJETIVO_SEGURO,
+        "combinada": combinada,
+        "tramos": [
+            {
+                "player": t.player,
+                "match": partido_corto(t.match),
+                "market": nombre_stake_texto(t.market),
+                "linea_original": t.linea_original,
+                "linea_nueva": t.linea_nueva,
+                "prob": t.probabilidad,
+                "cambio": t.cambio,
+                "no_alcanza": t.no_alcanza,
+            }
+            for t in tramos
+        ],
+    }

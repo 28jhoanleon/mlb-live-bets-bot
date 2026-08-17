@@ -233,6 +233,62 @@ async def sonadoras_api(request: Request) -> JSONResponse:
     ]})
 
 
+async def subir_captura(request: Request) -> JSONResponse:
+    """Cargar una apuesta desde la web, sin pasar por Telegram.
+
+    Las imágenes llegan en base64 dentro del JSON a propósito: recibir
+    multipart pediría una dependencia nueva, y el proyecto evita sumar
+    librerías salvo que hagan falta de verdad."""
+    if not _clave_ok(request.query_params.get("k")):
+        return JSONResponse({"detail": "Clave incorrecta"}, status_code=401)
+
+    chat_id = _chat_id()
+    if chat_id is None:
+        return JSONResponse({"detail": "Falta OWNER_CHAT_ID"}, status_code=500)
+
+    import base64
+
+    from app.web.service import guardar_captura
+
+    try:
+        cuerpo = await request.json()
+        imagenes = [base64.b64decode(i.split(",")[-1]) for i in cuerpo.get("imagenes", [])]
+    except Exception:
+        return JSONResponse({"detail": "No pude leer las imágenes"}, status_code=400)
+
+    if not imagenes:
+        return JSONResponse({"detail": "No mandaste ninguna imagen"}, status_code=400)
+
+    borrador = bool(cuerpo.get("borrador"))
+    resultado = await asyncio.to_thread(guardar_captura, chat_id, imagenes, borrador)
+    return JSONResponse(resultado, status_code=200 if resultado.get("ok") else 422)
+
+
+async def mejorar_api(request: Request) -> JSONResponse:
+    """Versión segura de una apuesta, para verla en la web."""
+    if not _clave_ok(request.query_params.get("k")):
+        return JSONResponse({"detail": "Clave incorrecta"}, status_code=401)
+
+    chat_id = _chat_id()
+    if chat_id is None:
+        return JSONResponse({"detail": "Falta OWNER_CHAT_ID"}, status_code=500)
+
+    from app.web.service import mejorar_ticket
+
+    try:
+        resultado = await asyncio.wait_for(
+            asyncio.to_thread(mejorar_ticket, chat_id, request.query_params.get("id")),
+            timeout=120,
+        )
+    except asyncio.TimeoutError:
+        return JSONResponse({"detail": "Tardó demasiado"}, status_code=504)
+    except Exception:
+        log.exception("Error mejorando desde la web")
+        return JSONResponse({"detail": "No pude analizarla"}, status_code=500)
+
+    return JSONResponse(resultado)
+
+
 async def index(request: Request) -> FileResponse:
     return FileResponse(ESTATICOS / "index.html")
 
@@ -256,5 +312,7 @@ app = Starlette(
         Route("/api/calibracion", calibracion_api),
         Route("/api/picks", picks_api),
         Route("/api/sonadoras", sonadoras_api),
+        Route("/api/captura", subir_captura, methods=["POST"]),
+        Route("/api/mejorar", mejorar_api),
     ]
 )

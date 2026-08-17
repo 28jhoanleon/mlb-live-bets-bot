@@ -158,3 +158,86 @@ class TestElFlagSobreviveANormalize:
         tickets = normalize(analisis)
         assert tickets
         assert all(t.get("borrador") for t in tickets)
+
+
+class TestElBotonBorrarUsaElIdCorrecto:
+    """Bug real: la × no borraba nada. Mandaba `clave` -el id interno
+    que usa el navegador para acordarse de qué tickets están colapsados-
+    en vez de `t.id`, que es el que calcula el servidor. El endpoint
+    buscaba ese id, no lo encontraba, y devolvía 404 en silencio.
+
+    Son dos identificadores parecidos con propósitos distintos: fácil de
+    confundir, invisible cuando se confunde."""
+
+    def _html(self):
+        import pathlib
+
+        return pathlib.Path("app/web/static/index.html").read_text()
+
+    def test_todas_las_acciones_mandan_el_id_del_servidor(self):
+        import re
+
+        llamadas = re.findall(r"accionTicket\('\$\{esc\(([^)]+)\)\}'", self._html())
+        assert llamadas, "no encontré ninguna llamada a accionTicket"
+        assert all(c == "t.id" for c in llamadas), (
+            f"alguna acción manda un id que el servidor no conoce: {llamadas}"
+        )
+
+    def test_el_servidor_expone_ese_id(self):
+        import pathlib
+
+        fuente = pathlib.Path("app/web/service.py").read_text()
+        assert '"id": ticket_id,' in fuente, (
+            "el servidor dejó de mandar el id: los botones quedarían sin efecto"
+        )
+
+
+class TestBorrarUnTicketDividido:
+    """Bug real: el botón × no borraba nada.
+
+    La web no muestra los tickets tal como están guardados: pasan por
+    normalize(), que puede partir uno en varios (uno por partido). Los
+    ids que ve el usuario se calculan sobre esa vista, así que no
+    existen en la versión guardada — y la búsqueda no encontraba nada.
+    """
+
+    def _con_dos_partidos(self, db):
+        # Sin total_odds ni group_odds: normalize lo parte en dos.
+        db.save_active_bet(1, {"bets": [{"legs": [
+            {"match": "A @ B", "player": "X", "market": "batter_hits", "line": "Over 0.5"},
+            {"match": "C @ D", "player": "Y", "market": "batter_hits", "line": "Over 0.5"},
+        ]}], "is_live": False})
+
+    def test_los_ids_de_la_web_no_coinciden_con_los_guardados(self, db):
+        """Demuestra por qué fallaba."""
+        from app.analysis.tickets import normalize
+
+        self._con_dos_partidos(db)
+        guardado = db.get_active_bet(1)
+        ids_guardado = {_ticket_id(t, t.get("legs", [])) for t in guardado["bets"]}
+        ids_web = {_ticket_id(t, t.get("legs", [])) for t in normalize(guardado)}
+        assert not (ids_guardado & ids_web)
+
+    def test_borra_usando_el_id_que_ve_el_usuario(self, db):
+        from app.analysis.tickets import normalize
+
+        self._con_dos_partidos(db)
+        vista = normalize(db.get_active_bet(1))
+        objetivo = _ticket_id(vista[0], vista[0]["legs"])
+
+        assert db.descartar_ticket(1, objetivo, _ticket_id) is True
+        assert len(normalize(db.get_active_bet(1))) == 1
+
+    def test_borrar_el_unico_limpia_todo(self, db):
+        db.save_active_bet(1, {"bets": [{"total_odds": "2.0", "legs": [
+            {"match": "A @ B", "player": "X", "market": "batter_hits", "line": "Over 0.5"},
+        ]}], "is_live": False})
+        from app.analysis.tickets import normalize
+
+        vista = normalize(db.get_active_bet(1))
+        db.descartar_ticket(1, _ticket_id(vista[0], vista[0]["legs"]), _ticket_id)
+        assert db.get_active_bet(1) is None
+
+    def test_un_id_inexistente_no_borra_nada(self, db):
+        self._con_dos_partidos(db)
+        assert db.descartar_ticket(1, "no-existe", _ticket_id) is False
