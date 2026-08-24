@@ -238,10 +238,19 @@ def unificar_cupon(tickets: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if con_total:
         unido["total_odds"] = con_total[0]["total_odds"]
 
-    for clave in ("label", "legs_declaradas", "is_live", "borrador"):
+    for clave in ("label", "is_live", "borrador"):
         for t in tickets:
             if t.get(clave):
                 unido[clave] = t[clave]
                 break
+
+    # Cada bloque declara SUS selecciones ("Multi apuesta del mismo
+    # partido (2"). Al unir hay que sumarlas: quedarse con la del primer
+    # bloque daba el absurdo "9 de 2 tramos leídos".
+    declaradas = [t.get("legs_declaradas") for t in tickets if t.get("legs_declaradas")]
+    if len(declaradas) == len(tickets):
+        unido["legs_declaradas"] = sum(declaradas)
+    # Si algún bloque no la declaró, el total sería incompleto y decir
+    # "9 de 6" confunde más que no decir nada.
 
     return [unido]

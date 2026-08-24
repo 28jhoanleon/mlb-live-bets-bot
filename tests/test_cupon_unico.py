@@ -176,3 +176,36 @@ class TestCabeceraDeCuota:
         fuente = pathlib.Path("app/odds/parlay.py").read_text()
         for cabecera in ("x-requests-remaining", "x-credits-remaining"):
             assert cabecera in fuente
+
+
+
+
+class TestDeclaradasAlUnir:
+    """Bug real: aparecía "9 DE 2 TRAMOS LEÍDOS".
+
+    Cada bloque del cupón declara SUS selecciones ("Multi apuesta del
+    mismo partido (2"). Al unir los bloques me quedaba con la del
+    primero, así que el ticket decía tener 2 declaradas y 9 leídas."""
+
+    def _bloques(self):
+        return [
+            {"total_odds": "15.67", "legs": [{"player": "A"}, {"player": "B"}],
+             "legs_declaradas": 2},
+            {"legs": [{"player": "C"}, {"player": "D"}], "legs_declaradas": 2},
+            {"legs": [{"player": "E"}, {"player": "F"}], "legs_declaradas": 2},
+            {"legs": [{"player": "G"}, {"player": "H"}, {"player": "I"}],
+             "legs_declaradas": 3},
+        ]
+
+    def test_se_suman_las_declaradas(self):
+        unido = unificar_cupon(self._bloques())[0]
+        assert unido["legs_declaradas"] == 9
+        assert len(unido["legs"]) == 9
+
+    def test_si_falta_una_declaracion_no_inventa_el_total(self):
+        """Decir "9 de 6" confunde más que no decir nada."""
+        bloques = [
+            {"legs": [{"player": "A"}], "legs_declaradas": 2},
+            {"legs": [{"player": "B"}]},
+        ]
+        assert unificar_cupon(bloques)[0].get("legs_declaradas") is None

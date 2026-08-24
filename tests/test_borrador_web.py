@@ -241,3 +241,44 @@ class TestBorrarUnTicketDividido:
     def test_un_id_inexistente_no_borra_nada(self, db):
         self._con_dos_partidos(db)
         assert db.descartar_ticket(1, "no-existe", _ticket_id) is False
+
+
+class TestCuotaManual:
+    """La IA no siempre encuentra la cuota en la captura: algunos cupones
+    no la muestran o queda cortada. Sin poder corregirla a mano, la
+    apuesta quedaba para siempre como "Sin cuota leída"."""
+
+    def _sin_cuota(self, db):
+        db.save_active_bet(1, {"bets": [{"legs": [
+            {"match": "A @ B", "player": "X", "market": "batter_hits", "line": "Over 0.5"},
+        ]}], "is_live": False})
+        from app.analysis.tickets import normalize
+
+        vista = normalize(db.get_active_bet(1))
+        return _ticket_id(vista[0], vista[0]["legs"])
+
+    def test_se_puede_fijar(self, db):
+        tid = self._sin_cuota(db)
+        assert db.fijar_cuota_ticket(1, tid, "15.67", _ticket_id) is True
+
+        from app.analysis.tickets import normalize
+
+        assert normalize(db.get_active_bet(1))[0]["total_odds"] == "15.67"
+
+    def test_un_id_inexistente_no_hace_nada(self, db):
+        self._sin_cuota(db)
+        assert db.fijar_cuota_ticket(1, "no-existe", "2.0", _ticket_id) is False
+
+    def test_el_endpoint_valida_el_rango(self):
+        """Una cuota de 0.5 o de un millón es un error de tipeo."""
+        import pathlib
+
+        fuente = pathlib.Path("app/web/api.py").read_text()
+        assert "1.01 <= valor <= 100000" in fuente
+
+    def test_acepta_coma_decimal(self):
+        """En Argentina se escribe 15,67."""
+        import pathlib
+
+        fuente = pathlib.Path("app/web/api.py").read_text()
+        assert '.replace(",", ".")' in fuente

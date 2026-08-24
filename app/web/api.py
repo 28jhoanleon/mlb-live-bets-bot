@@ -309,6 +309,36 @@ async def creditos_api(request: Request) -> JSONResponse:
     })
 
 
+async def cuota_manual(request: Request) -> JSONResponse:
+    """Corregir a mano la cuota de una apuesta."""
+    if not _clave_ok(request.query_params.get("k")):
+        return JSONResponse({"detail": "Clave incorrecta"}, status_code=401)
+
+    chat_id = _chat_id()
+    if chat_id is None:
+        return JSONResponse({"detail": "Falta OWNER_CHAT_ID"}, status_code=500)
+
+    ticket_id = request.query_params.get("id", "")
+    cruda = (request.query_params.get("cuota") or "").replace(",", ".").strip()
+
+    try:
+        valor = float(cruda)
+    except ValueError:
+        return JSONResponse({"detail": "Cuota inválida"}, status_code=400)
+    if not 1.01 <= valor <= 100000:
+        return JSONResponse({"detail": "Cuota fuera de rango"}, status_code=400)
+
+    from app.db.database import fijar_cuota_ticket
+    from app.web.service import _ticket_id as calcular_id
+
+    ok = await asyncio.to_thread(
+        fijar_cuota_ticket, chat_id, ticket_id, f"{valor:g}", calcular_id
+    )
+    if not ok:
+        return JSONResponse({"detail": "No encontré esa apuesta"}, status_code=404)
+    return JSONResponse({"ok": True, "cuota": f"{valor:g}"})
+
+
 async def index(request: Request) -> FileResponse:
     return FileResponse(ESTATICOS / "index.html")
 
@@ -334,6 +364,7 @@ app = Starlette(
         Route("/api/sonadoras", sonadoras_api),
         Route("/api/captura", subir_captura, methods=["POST"]),
         Route("/api/mejorar", mejorar_api),
+        Route("/api/cuota", cuota_manual),
         Route("/api/creditos", creditos_api),
     ]
 )

@@ -563,3 +563,28 @@ def leer_cuotas() -> dict[str, int]:
         except (TypeError, ValueError):
             continue
     return salida
+
+
+def fijar_cuota_ticket(chat_id: int, ticket_id: str, cuota: str, calcular_id) -> bool:
+    """Corrige a mano la cuota total de una apuesta.
+
+    Hace falta porque la IA no siempre encuentra la cuota en la captura
+    (algunos cupones no la muestran, o queda cortada). Sin esto la
+    apuesta quedaba para siempre como "Sin cuota leída" y no se podía
+    calcular cuánto paga."""
+    from app.analysis.tickets import normalize
+
+    actual = get_active_bet(chat_id)
+    if not actual:
+        return False
+
+    vista = normalize(actual)
+    encontrado = False
+    for t in vista:
+        if calcular_id(t, t.get("legs", [])) == ticket_id:
+            t["total_odds"] = cuota
+            encontrado = True
+
+    if encontrado:
+        save_active_bet(chat_id, {**actual, "bets": vista})
+    return encontrado

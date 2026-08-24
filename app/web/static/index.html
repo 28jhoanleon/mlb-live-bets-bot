@@ -249,6 +249,8 @@ body{
 .son__jug i{color:var(--muted);font-style:normal;font-size:10.5px;opacity:.75}
 .son__num{font-size:13px;color:var(--green);text-align:right;font-variant-numeric:tabular-nums}
 .son__num small{display:block;color:var(--muted);font-size:10.5px}
+.sincuota{text-decoration:underline dotted;text-underline-offset:3px;cursor:pointer}
+.meta{cursor:pointer}
 .cuotas{
   display:flex;gap:14px;justify-content:center;flex-wrap:wrap;
   margin:18px 15px 0;font-size:11px;color:var(--muted);
@@ -668,7 +670,8 @@ function grupo(g, indice, total){
     ? `<span class="final">Final</span>`
     : (g.live && g.inning
         ? `<span class="pulse"></span> ${esc(g.inning)}ª ${esc(g.inning_state || '')}`
-        : (g.por_empezar ? `<span class="pronto">Por empezar</span>`
+        : (g.por_empezar
+            ? `<span class="pronto">Por empezar</span>${g.start ? ` · ${esc(g.start)}` : ''}`
           : (g.start ? `🕐 ${esc(g.start)}` : '')));
 
   const cuota = g.odds ? `<span class="godds">${esc(g.odds)}</span>` : '';
@@ -703,7 +706,9 @@ function claveTicket(t, i){
 
 function ticket(t, i){
   const grupos = t.grupos || [];
-  const cuota = t.odds ? `Paga <b>${esc(t.odds)}</b>` : 'Sin cuota leída';
+  const cuota = t.odds
+    ? `Paga <b>${esc(t.odds)}</b>`
+    : `<span class="sincuota">Sin cuota leída</span>`;
   const etiqueta = t.label ? `<span class="chip">${esc(t.label)}</span>` : '';
   const tramos = t.declaradas && t.declaradas != t.total
     ? `${esc(t.total)} de ${esc(t.declaradas)} tramos leídos`
@@ -723,7 +728,7 @@ function ticket(t, i){
           ${etiqueta}<span class="tname">${tramos}</span>
           <span class="tally"><b>${esc(t.done)}</b> de ${esc(t.total)}</span>
         </div>
-        <div class="meta">
+        <div class="meta" onclick="event.stopPropagation();editarCuota('${esc(t.id)}','${esc(t.odds || '')}')">
           ${cuota} · ${esc(grupos.length)} ${grupos.length === 1 ? 'partido' : 'partidos'}
           ${t.borrador ? '<span class="final draft">Borrador</span>' : ''}
           ${t.terminado ? '<span class="final">Terminada</span>'
@@ -1127,6 +1132,28 @@ async function mostrarCreditos(){
     caja.hidden = false;
   } catch (e) {
     // Es un dato extra: si falla, la página sigue igual.
+  }
+}
+
+// Corregir la cuota a mano: la IA no siempre la encuentra en la
+// captura, y sin ella no se puede saber cuánto paga la apuesta.
+async function editarCuota(id, actual){
+  const valor = prompt('Cuota total de la apuesta:', actual || '');
+  if (valor === null) return;
+
+  const limpio = valor.replace(',', '.').trim();
+  if (!limpio) return;
+  if (isNaN(parseFloat(limpio))) { alert('Poné un número, por ejemplo 15.67'); return; }
+
+  try {
+    const r = await fetch(
+      `/api/cuota?k=${encodeURIComponent(KEY)}&id=${encodeURIComponent(id)}`
+      + `&cuota=${encodeURIComponent(limpio)}`, {cache:'no-store'});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'error');
+    await cargar();
+  } catch (e) {
+    alert('No pude guardar la cuota: ' + e.message);
   }
 }
 
