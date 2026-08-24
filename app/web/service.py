@@ -75,6 +75,13 @@ def _partido_del_jugador(nombre: str) -> str | None:
     if not equipo:
         return None
 
+    # Comparación tolerante: la MLB API puede devolver el equipo con
+    # cualquier variante ("Red Sox", "Boston Red Sox"). Comparar el texto
+    # exacto hacía que la deducción fallara casi siempre y todas las legs
+    # terminaran agrupadas bajo un mismo "? @ ?".
+    from app.utils.equipos import id_equipo
+
+    id_buscado = id_equipo(equipo)
     bajo = equipo.lower()
     from datetime import timedelta
 
@@ -90,7 +97,9 @@ def _partido_del_jugador(nombre: str) -> str | None:
             for juego in get_schedule_cacheado(dia):
                 away = (juego.get("away_team") or "")
                 home = (juego.get("home_team") or "")
-                if bajo in (away.lower(), home.lower()):
+                if id_buscado and id_buscado in (id_equipo(away), id_equipo(home)):
+                    return f"{away} @ {home}"
+                if bajo and bajo in (away.lower(), home.lower()):
                     return f"{away} @ {home}"
     except Exception:
         log.debug("No pude deducir el partido de %s", nombre, exc_info=True)

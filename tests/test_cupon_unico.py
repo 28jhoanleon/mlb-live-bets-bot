@@ -209,3 +209,63 @@ class TestDeclaradasAlUnir:
             {"legs": [{"player": "B"}]},
         ]
         assert unificar_cupon(bloques)[0].get("legs_declaradas") is None
+
+
+class TestDeduccionTolerante:
+    """Bug real: un cupón de 10 tramos de 10 partidos DISTINTOS aparecía
+    como "1 partido · ? @ ?", sin marcar nada en vivo.
+
+    La deducción comparaba el equipo del jugador contra el calendario
+    con texto EXACTO. Basta con que la MLB API devuelva "Red Sox" en vez
+    de "Boston Red Sox" para que falle, y entonces todas las legs quedan
+    agrupadas bajo el mismo partido desconocido."""
+
+    def _calendario(self):
+        return [
+            {"away_team": "Boston Red Sox", "home_team": "Miami Marlins"},
+            {"away_team": "Tampa Bay Rays", "home_team": "Detroit Tigers"},
+        ]
+
+    def _deducir(self, team):
+        from unittest.mock import patch
+
+        from app.web import service
+
+        with patch("app.mlb.players.search_player",
+                   return_value={"id": 1, "full_name": "X", "team": team}), \
+             patch("app.mlb.schedule.get_schedule_cacheado",
+                   return_value=self._calendario()):
+            return service._partido_del_jugador("X")
+
+    def test_con_el_nombre_completo(self):
+        assert self._deducir("Boston Red Sox") == "Boston Red Sox @ Miami Marlins"
+
+    def test_con_el_apodo_solo(self):
+        """El caso que fallaba."""
+        assert self._deducir("Red Sox") == "Boston Red Sox @ Miami Marlins"
+
+    def test_encuentra_al_equipo_local(self):
+        assert self._deducir("Detroit Tigers") == "Tampa Bay Rays @ Detroit Tigers"
+
+    def test_un_equipo_que_no_juega_hoy_no_se_inventa(self):
+        """Mejor "? @ ?" que asignarle un partido equivocado."""
+        assert self._deducir("Seattle Mariners") is None
+
+    def test_legs_de_partidos_distintos_no_se_agrupan_juntas(self):
+        """Lo que se veía: 10 tramos de 10 partidos bajo "1 partido"."""
+        from unittest.mock import patch
+
+        from app.web import service
+
+        equipos = {"A": "Boston Red Sox", "B": "Tampa Bay Rays"}
+
+        def _buscar(nombre):
+            return {"id": 1, "full_name": nombre, "team": equipos[nombre]}
+
+        with patch("app.mlb.players.search_player", side_effect=_buscar), \
+             patch("app.mlb.schedule.get_schedule_cacheado",
+                   return_value=self._calendario()):
+            uno = service._partido_del_jugador("A")
+            dos = service._partido_del_jugador("B")
+
+        assert uno != dos, "dos jugadores de partidos distintos dieron el mismo"
