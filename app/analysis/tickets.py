@@ -209,3 +209,39 @@ def to_storage(tickets: list[dict[str, Any]]) -> dict[str, Any]:
         "bets": tickets,
         "is_live": any(t.get("is_live") for t in tickets),
     }
+
+
+def unificar_cupon(tickets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Varios bloques de UNA captura son UNA sola apuesta.
+
+    El cupón de Stake muestra la combinada partida en bloques ("Multi
+    apuesta del mismo partido"), uno por partido, cada uno con su cuota
+    parcial. La IA los lee como apuestas separadas y terminabas viendo
+    cinco tarjetas de "2 TRAMOS" cuando habías jugado una sola.
+
+    La señal de que son apuestas DISTINTAS es que cada una traiga su
+    propia cuota total (o su propio importe/pago). Si ninguna la tiene,
+    son partes del mismo cupón y se unen.
+    """
+    if len(tickets) <= 1:
+        return tickets
+
+    con_total = [t for t in tickets if t.get("total_odds")]
+    if len(con_total) > 1:
+        # Cada una tiene su cuota total: son apuestas separadas de verdad.
+        return tickets
+
+    unido: dict[str, Any] = {
+        "legs": [leg for t in tickets for leg in t.get("legs", [])],
+    }
+    # Si UNA traía la cuota total, es la del cupón entero.
+    if con_total:
+        unido["total_odds"] = con_total[0]["total_odds"]
+
+    for clave in ("label", "legs_declaradas", "is_live", "borrador"):
+        for t in tickets:
+            if t.get(clave):
+                unido[clave] = t[clave]
+                break
+
+    return [unido]

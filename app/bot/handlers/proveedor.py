@@ -31,6 +31,8 @@ async def proveedor_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             lineas.append(f"🟢 *ParlayAPI*: anda · {len(eventos)} partidos")
             if restante is not None:
                 lineas.append(f"   créditos restantes: *{restante}*")
+                if restante < 50:
+                    lineas.append("   ⚠️ *Se están por agotar.*")
         except parlay.ParlayClientError as e:
             lineas.append(f"🔴 *ParlayAPI*: {e}")
         except Exception:

@@ -235,3 +235,42 @@ class TestWebAutosuficiente:
         i_check = fuente.index('if not leidos:')
         i_save = fuente.index("save_active_bet(chat_id, analisis)")
         assert i_check < i_save, "se guarda antes de verificar que se leyó algo"
+
+
+class TestCreditosEnLaWeb:
+    """Enterarte de que se agotaron los créditos cuando /sonadoras deja
+    de andar es tarde. Al pie, discreto, y en naranja si están bajos."""
+
+    def test_el_endpoint_existe(self):
+        import pathlib
+
+        assert '"/api/creditos"' in pathlib.Path("app/web/api.py").read_text()
+
+    def test_consultarlos_no_gasta_creditos(self):
+        """Se leen de las cabeceras de la última respuesta, no se pide
+        nada nuevo: mostrar el saldo no puede costar saldo."""
+        import pathlib
+
+        fuente = pathlib.Path("app/web/api.py").read_text()
+        i = fuente.index("async def creditos_api")
+        cuerpo = fuente[i:i + 900]
+        assert "cuota_restante()" in cuerpo
+        assert "get_events" not in cuerpo
+
+    def test_el_aviso_mira_solo_al_proveedor_principal(self):
+        """The Odds API es el respaldo y hace rato está agotado. Si
+        contara para el aviso, el cartel estaría siempre encendido y
+        dejarías de mirarlo justo cuando importe."""
+        import pathlib
+
+        html = pathlib.Path("app/web/static/index.html").read_text()
+        assert "const bajo = d.parlay != null && d.parlay < 50;" in html
+
+    def test_no_se_consulta_en_cada_refresco(self):
+        """La página se refresca cada 30 segundos; los créditos no
+        cambian tan rápido."""
+        import pathlib
+
+        html = pathlib.Path("app/web/static/index.html").read_text()
+        assert "_ultimoCreditos" in html
+        assert "300000" in html

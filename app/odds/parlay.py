@@ -68,6 +68,12 @@ def _get(path: str, params: dict[str, Any] | None = None) -> Any:
             try:
                 global _cuota_restante
                 _cuota_restante = int(restantes)
+                try:
+                    from app.db.database import guardar_cuota
+
+                    guardar_cuota("parlay", _cuota_restante)
+                except Exception:
+                    pass  # informativo: nunca puede tumbar una consulta
                 if _cuota_restante < 50:
                     log.warning("Quedan %s créditos en ParlayAPI", restantes)
             except ValueError:

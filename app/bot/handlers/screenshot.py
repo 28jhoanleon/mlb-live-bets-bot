@@ -20,7 +20,7 @@ from app.ai.vision import VisionAnalysisError, analyze_bet_screenshot
 from app.analysis.live_tracking import LiveLegStatus, get_live_tracking_for_match, track_leg_live
 from app.analysis.parlay import analyze_parlay
 from app.analysis.probability import LegEstimate, ProbabilityError, estimate_leg_probability
-from app.analysis.tickets import merge_tickets, normalize, to_storage
+from app.analysis.tickets import merge_tickets, normalize, to_storage, unificar_cupon
 from app.bot.media_group import (
     agregar_imagen,
     cancelar_espera,
@@ -356,7 +356,10 @@ async def _procesar_y_responder(
         )
         return
 
-    tickets_nuevos = merge_tickets([normalize(a) for a in analisis])
+    # unificar_cupon por captura: los bloques que la IA lee como apuestas
+    # separadas dentro de UNA imagen son partes del mismo cupón, salvo que
+    # cada uno traiga su propia cuota total.
+    tickets_nuevos = merge_tickets([unificar_cupon(normalize(a)) for a in analisis])
 
     tickets_previos: list[dict] = []
     if acumular:

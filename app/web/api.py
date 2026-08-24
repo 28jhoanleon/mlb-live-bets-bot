@@ -149,9 +149,12 @@ async def calibracion_api(request: Request) -> JSONResponse:
     from app.db.database import calibracion, resumen_calibracion
 
     try:
+        from app.db.database import leer_cuotas
+
         return JSONResponse({
             "resumen": await asyncio.to_thread(resumen_calibracion, chat_id),
             "tramos": await asyncio.to_thread(calibracion, chat_id),
+            "cuotas": await asyncio.to_thread(leer_cuotas),
         })
     except Exception:
         log.exception("Error trayendo la calibración")
@@ -289,6 +292,23 @@ async def mejorar_api(request: Request) -> JSONResponse:
     return JSONResponse(resultado)
 
 
+async def creditos_api(request: Request) -> JSONResponse:
+    """Créditos que quedan en las APIs de cuotas.
+
+    Se leen de las cabeceras de la última consulta, así que no gastan
+    nada: es el número que ya vino con la respuesta anterior. Si todavía
+    no se consultó nada en este arranque, viene vacío."""
+    if not _clave_ok(request.query_params.get("k")):
+        return JSONResponse({"detail": "Clave incorrecta"}, status_code=401)
+
+    from app.odds import parlay, theodds
+
+    return JSONResponse({
+        "parlay": parlay.cuota_restante() if parlay.hay_clave() else None,
+        "theodds": theodds.cuota_restante(),
+    })
+
+
 async def index(request: Request) -> FileResponse:
     return FileResponse(ESTATICOS / "index.html")
 
@@ -314,5 +334,6 @@ app = Starlette(
         Route("/api/sonadoras", sonadoras_api),
         Route("/api/captura", subir_captura, methods=["POST"]),
         Route("/api/mejorar", mejorar_api),
+        Route("/api/creditos", creditos_api),
     ]
 )

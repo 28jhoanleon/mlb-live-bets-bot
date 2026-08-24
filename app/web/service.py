@@ -54,6 +54,38 @@ log = get_logger(__name__)
 TOLERANCIA_TICKET_TERMINADO = timedelta(hours=3)
 
 
+def _partido_del_jugador(nombre: str) -> str | None:
+    """Deduce el partido a partir del jugador.
+
+    Hace falta porque algunos cupones de Stake listan solo el escudo del
+    equipo, sin el nombre del cruce. La IA no puede leer un logo, así que
+    la leg llega sin partido y en la web aparecía "? @ ?" sin datos en
+    vivo. Sabiendo de qué equipo es el jugador, el calendario de hoy dice
+    contra quién juega.
+    """
+    from app.mlb.players import search_player
+    from app.mlb.schedule import get_schedule_cacheado
+
+    try:
+        datos = search_player(nombre)
+    except Exception:
+        return None
+    equipo = (datos or {}).get("team")
+    if not equipo:
+        return None
+
+    bajo = equipo.lower()
+    try:
+        for juego in get_schedule_cacheado():
+            away = (juego.get("away_team") or "")
+            home = (juego.get("home_team") or "")
+            if bajo in (away.lower(), home.lower()):
+                return f"{away} @ {home}"
+    except Exception:
+        log.debug("No pude deducir el partido de %s", nombre, exc_info=True)
+    return None
+
+
 def _equipos_de(match: str) -> tuple[str, str]:
     """Separa el cruce en (visitante, local).
 
@@ -566,6 +598,12 @@ def estado_apuestas(chat_id: int) -> dict[str, Any]:
         por_partido: dict[tuple[str, str], list[dict]] = {}
         for leg in legs_raw:
             nombre = (leg.get("match") or ticket.get("match") or "").strip()
+            if not nombre and leg.get("player"):
+                # Cupón que solo mostraba escudos: se deduce del jugador.
+                deducido = _partido_del_jugador(leg["player"])
+                if deducido:
+                    nombre = deducido
+                    leg["match"] = deducido
             dia = str(leg.get("match_datetime") or "")[:10]
             por_partido.setdefault((nombre, dia), []).append(leg)
 
@@ -709,14 +747,17 @@ def guardar_captura(chat_id: int, imagenes: list[bytes], borrador: bool = False)
     con esto la web deja de depender del chat para cargar una apuesta.
     """
     from app.ai.vision import analyze_bet_screenshot
-    from app.analysis.tickets import merge_tickets, to_storage
+    from app.analysis.tickets import merge_tickets, to_storage, unificar_cupon
     from app.db.database import log_bet_analysis, save_active_bet
 
     leidos: list[list[dict]] = []
     errores: list[str] = []
     for imagen in imagenes:
         try:
-            leidos.append(normalize(analyze_bet_screenshot(imagen)))
+            # Una captura = un cupón: los bloques que la IA lee como
+            # apuestas separadas se unen salvo que cada uno traiga su
+            # propia cuota total.
+            leidos.append(unificar_cupon(normalize(analyze_bet_screenshot(imagen))))
         except Exception as exc:
             log.warning("No pude leer una captura subida por la web: %s", exc)
             errores.append(str(exc))

@@ -93,7 +93,8 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("help", start.help_command))
     app.add_handler(CommandHandler("value", value.value))
     app.add_handler(CommandHandler("sonadora", sonadora.sonadora))
-    app.add_handler(CommandHandler("sonadoras", sonadora.sonadora))
+    for _alias in ("sonadoras", "sonadora", "son"):
+        app.add_handler(CommandHandler(_alias, sonadora.sonadora))
     app.add_handler(CommandHandler("combos", combos_historial.combos))
     app.add_handler(CommandHandler("refresh", screenshot.refresh_last_bet))
     app.add_handler(CommandHandler("nueva", screenshot.nueva_apuesta))
@@ -101,7 +102,10 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("borrar", borrar.borrar_cmd))
     app.add_handler(CommandHandler("limpiar", limpiar.limpiar_cmd))
     app.add_handler(CommandHandler("proveedor", proveedor.proveedor_cmd))
-    app.add_handler(CommandHandler("calibracion", calibracion.calibracion_cmd))
+    # Alias: es natural escribirlo abreviado. Telegram NO acepta tildes
+    # ni ñ en los comandos, así que /calibración no se puede registrar.
+    for _alias in ("calibracion", "calibrar", "calib"):
+        app.add_handler(CommandHandler(_alias, calibracion.calibracion_cmd))
     app.add_handler(CommandHandler("historial", history.historial))
     app.add_handler(MessageHandler(filters.PHOTO, screenshot.handle_bet_screenshot))
 

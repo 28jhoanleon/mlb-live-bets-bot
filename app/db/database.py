@@ -93,6 +93,11 @@ def init_db() -> None:
                 UNIQUE (chat_id, ticket_id, jugador, mercado, linea)
             );
 
+            CREATE TABLE IF NOT EXISTS ajustes (
+                clave TEXT PRIMARY KEY,
+                valor TEXT
+            );
+
             CREATE TABLE IF NOT EXISTS ticket_terminado (
                 chat_id TEXT NOT NULL,
                 ticket_id TEXT NOT NULL,
@@ -530,3 +535,31 @@ def descartar_ticket(chat_id: int, ticket_id: str, calcular_id) -> bool:
     else:
         clear_active_bet(chat_id)
     return True
+
+
+def guardar_cuota(proveedor: str, restante: int) -> None:
+    """Última cuota conocida de una API de cuotas.
+
+    Se persiste porque el valor solo se conoce después de consultar, y
+    tras un reinicio de Railway se perdía: la web no podía mostrar nada
+    hasta que alguien pidiera soñadoras."""
+    with _connection() as conn:
+        conn.execute(
+            "INSERT INTO ajustes (clave, valor) VALUES (?, ?) "
+            "ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor",
+            (f"cuota_{proveedor}", str(restante)),
+        )
+
+
+def leer_cuotas() -> dict[str, int]:
+    with _connection() as conn:
+        filas = conn.execute(
+            "SELECT clave, valor FROM ajustes WHERE clave LIKE 'cuota_%'"
+        ).fetchall()
+    salida = {}
+    for f in filas:
+        try:
+            salida[f["clave"].removeprefix("cuota_")] = int(f["valor"])
+        except (TypeError, ValueError):
+            continue
+    return salida

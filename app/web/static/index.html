@@ -202,6 +202,11 @@ body{
 .tbar.fin .tbar__pista i{background:var(--muted)}
 .tbar__txt{font-size:11px;color:var(--muted);flex:none;letter-spacing:.02em}
 .tbar.mal .tbar__txt{color:var(--clay)}
+.creditos{
+  text-align:center;font-size:10.5px;color:var(--muted);
+  opacity:.6;margin:2px 0 16px;letter-spacing:.03em;
+}
+.creditos.bajo{color:var(--amber);opacity:1}
 .acciones{display:flex;gap:8px;margin:0 15px 12px}
 .accion{
   flex:1;text-align:center;padding:9px;border:1px dashed var(--line);
@@ -244,6 +249,13 @@ body{
 .son__jug i{color:var(--muted);font-style:normal;font-size:10.5px;opacity:.75}
 .son__num{font-size:13px;color:var(--green);text-align:right;font-variant-numeric:tabular-nums}
 .son__num small{display:block;color:var(--muted);font-size:10.5px}
+.cuotas{
+  display:flex;gap:14px;justify-content:center;flex-wrap:wrap;
+  margin:18px 15px 0;font-size:11px;color:var(--muted);
+}
+.cuota b{color:var(--chalk);font-weight:600}
+.cuota.poca b{color:var(--amber)}
+.cuota.agotada b{color:var(--clay)}
 .calib{margin:22px 15px 0;padding-top:16px;border-top:1px solid var(--line)}
 .calhead{
   font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:15px;
@@ -539,8 +551,10 @@ body{
   <div id="listaSonadoras"></div>
 </main>
 
+<div id="cuotas" class="cuotas" hidden></div>
 <section id="calibracion" class="calib" hidden></section>
 <p class="foot" id="foot">Cargando…</p>
+<p id="creditos" class="creditos" hidden></p>
 
 <script>
 const KEY = new URLSearchParams(location.search).get('k') || '';
@@ -780,6 +794,27 @@ function actualizarCabecera(r){
 // entiende de un vistazo como barras, y es ilegible como lista.
 let _calibracionCargada = false;
 
+// Créditos de las APIs de cuotas. Cuando se agotan dejan de andar las
+// soñadoras y la pestaña Armar, y hasta ahora había que acordarse de
+// preguntarle al bot con /proveedor.
+function mostrarCuotas(cuotas){
+  const cont = document.getElementById('cuotas');
+  if (!cont || !cuotas) return;
+
+  const nombres = {parlay: 'ParlayAPI', theodds: 'The Odds API'};
+  const partes = Object.entries(cuotas)
+    .filter(([k]) => nombres[k])
+    .map(([k, v]) => {
+      const clase = v <= 0 ? 'agotada' : (v < 50 ? 'poca' : '');
+      const txt = v <= 0 ? 'agotada' : `${v}`;
+      return `<span class="cuota ${clase}">${nombres[k]}: <b>${esc(txt)}</b></span>`;
+    });
+
+  if (!partes.length) return;
+  cont.innerHTML = partes.join('');
+  cont.hidden = false;
+}
+
 async function cargarCalibracion(){
   if (_calibracionCargada) return;
   const cont = document.getElementById('calibracion');
@@ -789,6 +824,8 @@ async function cargarCalibracion(){
     const r = await fetch(`/api/calibracion?k=${encodeURIComponent(KEY)}`, {cache:'no-store'});
     if (!r.ok) return;
     const d = await r.json();
+    mostrarCuotas(d.cuotas);
+
     const res = d.resumen || {};
     if (!res.total) return;  // sin datos, ni se muestra
 
@@ -1054,6 +1091,43 @@ function _barraTicket(t){
     </div>`;
 }
 
+// --- Créditos de las APIs ---------------------------------------------
+// Al pie, discreto. Se leen de la última respuesta de cada proveedor, así
+// que consultarlos no gasta nada. Sirve para no enterarte de que se
+// agotaron cuando /sonadoras deja de andar.
+let _ultimoCreditos = 0;
+
+async function mostrarCreditos(){
+  // Cada 5 minutos alcanza: no cambian a cada refresco de la página.
+  if (Date.now() - _ultimoCreditos < 300000) return;
+  _ultimoCreditos = Date.now();
+
+  try {
+    const r = await fetch(`/api/creditos?k=${encodeURIComponent(KEY)}`, {cache:'no-store'});
+    if (!r.ok) return;
+    const d = await r.json();
+
+    const partes = [];
+    if (d.parlay != null) partes.push(`ParlayAPI ${d.parlay}`);
+    if (d.theodds != null) partes.push(`respaldo ${d.theodds}`);
+    if (!partes.length) return;
+
+    // El aviso mira SOLO a ParlayAPI: es el proveedor que se usa de
+    // verdad. The Odds API es el respaldo y hace rato está agotado, así
+    // que si contara acá el cartel estaría siempre encendido y dejarías
+    // de mirarlo justo cuando importe.
+    const bajo = d.parlay != null && d.parlay < 50;
+
+    const caja = document.getElementById('creditos');
+    caja.className = 'creditos' + (bajo ? ' bajo' : '');
+    caja.textContent = (bajo ? '⚠️ ' : '') + partes.join(' · ')
+      + (bajo ? ' — se están agotando' : '');
+    caja.hidden = false;
+  } catch (e) {
+    // Es un dato extra: si falla, la página sigue igual.
+  }
+}
+
 function toggleTicket(el){
   const clave = el.dataset.clave;
   const colapsado = el.classList.toggle('is-collapsed');
@@ -1101,6 +1175,7 @@ async function cargar(){
 
     const hora = new Date().toLocaleTimeString('es-AR', {hour:'2-digit', minute:'2-digit'});
     foot.textContent = `Actualizado ${hora} · se refresca solo`;
+    mostrarCreditos();
   }catch(e){
     // Un error de red no debe borrar lo que ya se está mostrando.
     foot.textContent = 'Sin conexión con el servidor — reintentando';
