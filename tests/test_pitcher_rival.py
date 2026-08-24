@@ -85,3 +85,44 @@ class TestNoSeAplicaAMercadosDePitcheo:
 
         fuente = pathlib.Path("app/analysis/daily_picks.py").read_text()
         assert 'if not market_label.startswith("pitcher_"):' in fuente
+
+
+class TestIdentificarAlRival:
+    """El ajuste por pitcher rival nunca llegó a aplicarse: dependía de
+    saber el equipo del jugador, y ese dato no llegaba (la API no lo
+    devolvía sin pedirlo). Y aun con el equipo, la comparación era por
+    TEXTO: "Rays" contra "Tampa Bay Rays" no coincide, así que devolvía
+    el pitcher del equipo equivocado -- peor que no ajustar, porque el
+    número queda mal sin que se note."""
+
+    def _partido(self):
+        return {"home_team": "Detroit Tigers", "away_team": "Tampa Bay Rays",
+                "home_pitcher": "Tarik Skubal", "away_pitcher": "Shane McClanahan"}
+
+    def _rival(self, equipo_del_jugador):
+        from unittest.mock import patch
+
+        from app.analysis.daily_picks import _pitcher_rival_de
+
+        with patch("app.mlb.schedule.buscar_partido", return_value=self._partido()), \
+             patch("app.mlb.players.search_player",
+                   return_value={"team": equipo_del_jugador}):
+            return _pitcher_rival_de({"away_team": "a", "home_team": "b"}, "X")
+
+    def test_un_bateador_visitante_enfrenta_al_abridor_local(self):
+        assert self._rival("Tampa Bay Rays") == "Tarik Skubal"
+
+    def test_funciona_con_el_apodo(self):
+        """El caso que fallaba."""
+        assert self._rival("Rays") == "Tarik Skubal"
+
+    def test_un_bateador_local_enfrenta_al_visitante(self):
+        assert self._rival("Detroit Tigers") == "Shane McClanahan"
+
+    def test_si_no_sabe_de_que_equipo_es_no_ajusta(self):
+        """Aplicar el pitcher equivocado distorsiona la estimación:
+        mejor no tocar nada."""
+        assert self._rival("Seattle Mariners") is None
+
+    def test_sin_equipo_tampoco_ajusta(self):
+        assert self._rival("") is None

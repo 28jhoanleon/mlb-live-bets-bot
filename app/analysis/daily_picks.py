@@ -124,10 +124,24 @@ def _pitcher_rival_de(event: dict, jugador: str) -> str | None:
     if not equipo_jugador:
         return None
 
-    local = (partido.get("home_team") or "").lower()
-    if equipo_jugador.lower() in local or local in equipo_jugador.lower():
+    # Comparar por ID y no por texto: "Rays" contra "Tampa Bay Rays" no
+    # coincide como cadena, y ahí devolvíamos el pitcher del equipo
+    # EQUIVOCADO -- peor que no ajustar nada, porque el número queda mal
+    # sin que se note.
+    from app.utils.equipos import id_equipo
+
+    id_jugador = id_equipo(equipo_jugador)
+    id_local = id_equipo(partido.get("home_team"))
+    id_visitante = id_equipo(partido.get("away_team"))
+
+    if id_jugador and id_local and id_jugador == id_local:
         return partido.get("away_pitcher")  # batea el local -> abridor visitante
-    return partido.get("home_pitcher")
+    if id_jugador and id_visitante and id_jugador == id_visitante:
+        return partido.get("home_pitcher")
+
+    # Sin certeza de en qué equipo juega, no se ajusta: aplicar el
+    # pitcher equivocado distorsiona la estimación.
+    return None
 
 
 def find_daily_picks(

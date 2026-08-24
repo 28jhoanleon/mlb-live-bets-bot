@@ -249,8 +249,8 @@ body{
 .son__jug i{color:var(--muted);font-style:normal;font-size:10.5px;opacity:.75}
 .son__num{font-size:13px;color:var(--green);text-align:right;font-variant-numeric:tabular-nums}
 .son__num small{display:block;color:var(--muted);font-size:10.5px}
-.sincuota{text-decoration:underline dotted;text-underline-offset:3px;cursor:pointer}
-.meta{cursor:pointer}
+.editable{cursor:pointer}
+.sincuota{text-decoration:underline dotted;text-underline-offset:3px}
 .cuotas{
   display:flex;gap:14px;justify-content:center;flex-wrap:wrap;
   margin:18px 15px 0;font-size:11px;color:var(--muted);
@@ -706,20 +706,24 @@ function claveTicket(t, i){
 
 function ticket(t, i){
   const grupos = t.grupos || [];
+  // Solo la cuota abre el editor. Antes el clic estaba en toda la
+  // línea, así que tocar para desplegar el ticket abría el diálogo de
+  // cuota sin querer.
+  const editar = `onclick="event.stopPropagation();`
+    + `editarCuota('${esc(t.id)}','${esc(t.odds || '')}')"`;
   const cuota = t.odds
-    ? `Paga <b>${esc(t.odds)}</b>`
-    : `<span class="sincuota">Sin cuota leída</span>`;
+    ? `<span class="editable" ${editar}>Paga <b>${esc(t.odds)}</b></span>`
+    : `<span class="editable sincuota" ${editar}>Sin cuota leída</span>`;
   const etiqueta = t.label ? `<span class="chip">${esc(t.label)}</span>` : '';
   const tramos = t.declaradas && t.declaradas != t.total
     ? `${esc(t.total)} de ${esc(t.declaradas)} tramos leídos`
     : `${esc(t.total)} tramos`;
 
   const clave = claveTicket(t, i);
-  // Se colapsa sola si ya terminó o si ya está rota: en los dos casos
-  // no hay nada que seguir mirando.
-  const colapsado = _colapsoManual.has(clave)
-    ? _colapsoManual.get(clave)
-    : (!!t.terminado || !!t.caida);
+  // Colapsados por default. Con varias apuestas de 10 tramos, abrir
+  // todo de entrada llena la pantalla y hay que scrollear para ver qué
+  // hay. La cabecera ya muestra el avance; el detalle se abre al tocar.
+  const colapsado = _colapsoManual.has(clave) ? _colapsoManual.get(clave) : true;
 
   return `
     <section class="ticket ${colapsado ? 'is-collapsed' : ''} ${t.caida && !t.terminado ? 'is-dead' : ''}" data-clave="${esc(clave)}">
@@ -728,7 +732,7 @@ function ticket(t, i){
           ${etiqueta}<span class="tname">${tramos}</span>
           <span class="tally"><b>${esc(t.done)}</b> de ${esc(t.total)}</span>
         </div>
-        <div class="meta" onclick="event.stopPropagation();editarCuota('${esc(t.id)}','${esc(t.odds || '')}')">
+        <div class="meta">
           ${cuota} · ${esc(grupos.length)} ${grupos.length === 1 ? 'partido' : 'partidos'}
           ${t.borrador ? '<span class="final draft">Borrador</span>' : ''}
           ${t.terminado ? '<span class="final">Terminada</span>'
