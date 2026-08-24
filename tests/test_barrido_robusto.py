@@ -40,6 +40,7 @@ class TestUnFalloNoTumbaElBarrido:
             return _est(player)
 
         with patch("app.odds.parlay.hay_clave", return_value=False), \
+             patch.object(dp, "precalentar_cache"), \
              patch("app.odds.theodds.get_events", return_value=eventos), \
              patch("app.odds.theodds.get_player_props",
                    return_value=_payload(["Bueno", "Explota", "Otro"], ["batter_hits"])), \
@@ -63,6 +64,7 @@ class TestUnFalloNoTumbaElBarrido:
             return _est(player)
 
         with patch("app.odds.parlay.hay_clave", return_value=False), \
+             patch.object(dp, "precalentar_cache"), \
              patch("app.odds.theodds.get_events", return_value=eventos), \
              patch("app.odds.theodds.get_player_props",
                    return_value=_payload(["Bueno", "Desconocido"], ["batter_hits"])), \

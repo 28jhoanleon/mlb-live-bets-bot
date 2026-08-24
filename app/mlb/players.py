@@ -81,7 +81,13 @@ def search_player(name: str) -> dict[str, Any] | None:
     """
     p = None
     try:
-        data = get("/people/search", params={"names": name})
+        # hydrate=currentTeam: sin esto la búsqueda devuelve al jugador
+        # PERO SIN su equipo, y sin equipo no se puede deducir a qué
+        # partido pertenece la leg. Era el eslabón que faltaba.
+        data = get(
+            "/people/search",
+            params={"names": name, "hydrate": "currentTeam"},
+        )
         gente = data.get("people", [])
         if gente:
             p = gente[0]
@@ -92,6 +98,17 @@ def search_player(name: str) -> dict[str, Any] | None:
         p = _buscar_en_padron(name)
     if p is None:
         return None
+
+    # Segundo intento por el equipo: algunos endpoints no lo incluyen ni
+    # con hydrate. La ficha individual sí lo trae siempre.
+    if not p.get("currentTeam", {}).get("name") and p.get("id"):
+        try:
+            ficha = get(f"/people/{p['id']}", params={"hydrate": "currentTeam"})
+            completos = ficha.get("people", [])
+            if completos and completos[0].get("currentTeam"):
+                p = {**p, "currentTeam": completos[0]["currentTeam"]}
+        except Exception:
+            log.info("No pude traer el equipo de %s", name)
 
     return {
         "id": p.get("id"),

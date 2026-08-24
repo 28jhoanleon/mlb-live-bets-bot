@@ -91,3 +91,71 @@ class TestCaminoNormal:
 
         with patch.object(players, "get", side_effect=_ok):
             assert players.search_player("Aaron Judge")["id"] == 9
+
+
+class TestElEquipoSiempreLlega:
+    """LA causa raíz de que las legs quedaran sin partido.
+
+    /people/search encuentra al jugador pero NO devuelve su equipo si no
+    se lo pide explícitamente. Y sin equipo se corta toda la cadena: no
+    se puede deducir el partido, no hay datos en vivo, y la web muestra
+    "? @ ?" con todo agrupado bajo un partido inexistente.
+
+    Lo confirmó el diagnóstico en producción: paso 1 verde (jugador
+    encontrado), paso 2 rojo ("la API no devolvió el equipo").
+    """
+
+    def setup_method(self):
+        players.limpiar_padron()
+
+    def teardown_method(self):
+        players.limpiar_padron()
+
+    def test_se_pide_el_equipo_en_la_busqueda(self):
+        import pathlib
+
+        fuente = pathlib.Path("app/mlb/players.py").read_text()
+        assert '"hydrate": "currentTeam"' in fuente
+
+    def test_si_la_busqueda_no_lo_trae_se_pide_la_ficha(self):
+        """Segundo intento: la ficha individual siempre incluye el equipo."""
+        def _get(path, params=None, **kw):
+            if "people/search" in path:
+                return {"people": [{"id": 650490, "fullName": "Yandy Díaz",
+                                    "primaryPosition": {"type": "Infielder"}}]}
+            if path.startswith("/people/"):
+                return {"people": [{"id": 650490, "fullName": "Yandy Díaz",
+                                    "currentTeam": {"name": "Tampa Bay Rays"},
+                                    "primaryPosition": {"type": "Infielder"}}]}
+            return {}
+
+        with patch.object(players, "get", side_effect=_get):
+            assert players.search_player("Yandy Diaz")["team"] == "Tampa Bay Rays"
+
+    def test_si_la_busqueda_ya_lo_trae_no_se_pide_de_nuevo(self):
+        """No gastar una llamada extra cuando el dato ya vino."""
+        llamadas = {"fichas": 0}
+
+        def _get(path, params=None, **kw):
+            if "people/search" in path:
+                return {"people": [{"id": 1, "fullName": "X",
+                                    "currentTeam": {"name": "Boston Red Sox"},
+                                    "primaryPosition": {"type": "Outfielder"}}]}
+            llamadas["fichas"] += 1
+            return {}
+
+        with patch.object(players, "get", side_effect=_get):
+            assert players.search_player("X")["team"] == "Boston Red Sox"
+        assert llamadas["fichas"] == 0
+
+    def test_si_la_ficha_tambien_falla_no_rompe(self):
+        def _get(path, params=None, **kw):
+            if "people/search" in path:
+                return {"people": [{"id": 1, "fullName": "X",
+                                    "primaryPosition": {"type": "Outfielder"}}]}
+            raise ConnectionError("cortó")
+
+        with patch.object(players, "get", side_effect=_get):
+            resultado = players.search_player("X")
+        assert resultado["full_name"] == "X"
+        assert resultado["team"] is None
