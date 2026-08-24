@@ -11,15 +11,88 @@ from app.utils.logger import get_logger
 log = get_logger(__name__)
 
 
-def search_player(name: str) -> dict[str, Any] | None:
-    """Busca un jugador por nombre completo. Si hay varios resultados
-    (nombres comunes), devuelve el primero — para desambiguar mejor
-    habría que cruzar con el equipo del partido."""
-    data = get("/people/search", params={"names": name})
-    people = data.get("people", [])
-    if not people:
+# Padrón completo de la temporada, para no depender de /people/search.
+#
+# Ese endpoint devuelve 403 de forma intermitente (se vio en producción),
+# y cuando falla NO hay jugador, no hay equipo, no hay partido deducido y
+# no hay datos en vivo: se cae toda la cadena. El listado de la
+# temporada es una sola llamada y queda en memoria.
+_PADRON: dict[str, dict[str, Any]] | None = None
+
+
+def _clave(nombre: str) -> str:
+    from app.analysis.probability import _normalize
+
+    return _normalize(nombre)
+
+
+def _cargar_padron() -> dict[str, dict[str, Any]]:
+    global _PADRON
+    if _PADRON is not None:
+        return _PADRON
+
+    from datetime import date
+
+    padron: dict[str, dict[str, Any]] = {}
+    try:
+        data = get("/sports/1/players", params={"season": date.today().year})
+        for p in data.get("people", []):
+            if p.get("fullName"):
+                padron[_clave(p["fullName"])] = p
+        log.info("Padrón de jugadores cargado: %d", len(padron))
+    except Exception:
+        log.warning("No pude cargar el padrón de jugadores", exc_info=True)
+
+    _PADRON = padron
+    return padron
+
+
+def limpiar_padron() -> None:
+    global _PADRON
+    _PADRON = None
+
+
+def _buscar_en_padron(name: str) -> dict[str, Any] | None:
+    from difflib import SequenceMatcher
+
+    padron = _cargar_padron()
+    if not padron:
         return None
-    p = people[0]
+
+    buscado = _clave(name)
+    if buscado in padron:
+        return padron[buscado]
+
+    # Tolerante a errores de tipeo de la IA, igual que en el boxscore.
+    mejor, ratio_mejor = None, 0.0
+    for clave, datos in padron.items():
+        ratio = SequenceMatcher(None, buscado, clave).ratio()
+        if ratio > ratio_mejor:
+            mejor, ratio_mejor = datos, ratio
+    return mejor if ratio_mejor >= 0.88 else None
+
+
+def search_player(name: str) -> dict[str, Any] | None:
+    """Busca un jugador por nombre.
+
+    Intenta /people/search y, si falla o no encuentra, cae al padrón de
+    la temporada. El respaldo existe porque ese endpoint devuelve 403 de
+    a ratos, y sin jugador no hay equipo, ni partido, ni datos en vivo.
+    """
+    p = None
+    try:
+        data = get("/people/search", params={"names": name})
+        gente = data.get("people", [])
+        if gente:
+            p = gente[0]
+    except Exception:
+        log.info("people/search falló para %s, uso el padrón", name)
+
+    if p is None:
+        p = _buscar_en_padron(name)
+    if p is None:
+        return None
+
     return {
         "id": p.get("id"),
         "full_name": p.get("fullName"),
