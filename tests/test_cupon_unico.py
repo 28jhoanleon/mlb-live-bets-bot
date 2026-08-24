@@ -95,3 +95,61 @@ class TestDeducirPartido:
 
         with patch("app.mlb.players.search_player", side_effect=ConnectionError("cortó")):
             assert service._partido_del_jugador("X") is None
+
+
+class TestPartidoInservible:
+    """No alcanza con que el partido venga VACÍO: la IA a veces devuelve
+    un texto que no identifica a nadie ("? @ ?", un guión, el nombre del
+    mercado). En la web eso salía como "? @ ?" y sin datos en vivo,
+    porque la deducción solo se activaba con el texto vacío."""
+
+    def test_un_texto_sin_equipos_dispara_la_deduccion(self):
+        from app.utils.equipos import equipos_en_texto
+
+        for basura in ("", "? @ ?", "-", "Home Runs"):
+            assert len(equipos_en_texto(basura)) < 2, basura
+
+    def test_un_partido_de_verdad_no_la_dispara(self):
+        from app.utils.equipos import equipos_en_texto
+
+        assert len(equipos_en_texto("Boston Red Sox @ Miami Marlins")) == 2
+
+    def test_el_codigo_usa_ese_criterio(self):
+        import pathlib
+
+        fuente = pathlib.Path("app/web/service.py").read_text()
+        assert "len(equipos_en_texto(nombre)) < 2" in fuente
+
+
+class TestPartidoEnDiasCercanos:
+    def test_busca_tambien_manana(self):
+        """Una apuesta puede ser para el partido de mañana."""
+        from unittest.mock import patch
+        from datetime import date
+
+        from app.web import service
+
+        manana = date(2026, 8, 15)
+
+        def _por_dia(dia=None):
+            if dia == manana:
+                return [{"away_team": "Boston Red Sox", "home_team": "Miami Marlins"}]
+            return []
+
+        with patch("app.mlb.players.search_player",
+                   return_value={"id": 1, "full_name": "X", "team": "Boston Red Sox"}), \
+             patch("app.mlb.schedule.get_schedule_cacheado", side_effect=_por_dia), \
+             patch("app.utils.tiempo.hoy_local", return_value=date(2026, 8, 14)):
+            assert service._partido_del_jugador("X") == "Boston Red Sox @ Miami Marlins"
+
+
+class TestCabeceraDeCuota:
+    """Solo aparecía The Odds API: ParlayAPI nombra distinto la cabecera
+    de créditos y buscábamos un único nombre."""
+
+    def test_se_prueban_varios_nombres(self):
+        import pathlib
+
+        fuente = pathlib.Path("app/odds/parlay.py").read_text()
+        for cabecera in ("x-requests-remaining", "x-credits-remaining"):
+            assert cabecera in fuente

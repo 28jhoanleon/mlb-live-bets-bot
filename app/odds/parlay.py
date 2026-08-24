@@ -63,7 +63,17 @@ def _get(path: str, params: dict[str, Any] | None = None) -> Any:
             raise ParlayClientError("ParlayAPI pidió bajar el ritmo (429).")
         resp.raise_for_status()
 
-        restantes = resp.headers.get("x-requests-remaining")
+        # Cada proveedor nombra distinto la cabecera de cuota. Buscar
+        # solo una hacía que ParlayAPI nunca reportara sus créditos y en
+        # la web apareciera únicamente The Odds API.
+        restantes = None
+        for cabecera in (
+            "x-requests-remaining", "x-credits-remaining", "x-ratelimit-remaining",
+            "x-credits-left", "x-quota-remaining",
+        ):
+            if cabecera in resp.headers:
+                restantes = resp.headers[cabecera]
+                break
         if restantes is not None:
             try:
                 global _cuota_restante

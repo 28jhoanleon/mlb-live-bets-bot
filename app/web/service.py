@@ -75,12 +75,20 @@ def _partido_del_jugador(nombre: str) -> str | None:
         return None
 
     bajo = equipo.lower()
+    from datetime import timedelta
+
+    from app.utils.tiempo import hoy_local
+
+    # Hoy primero, después mañana y ayer: una apuesta puede ser para el
+    # partido de mañana, o quedar viva pasada la medianoche.
     try:
-        for juego in get_schedule_cacheado():
-            away = (juego.get("away_team") or "")
-            home = (juego.get("home_team") or "")
-            if bajo in (away.lower(), home.lower()):
-                return f"{away} @ {home}"
+        for offset in (0, 1, -1):
+            dia = hoy_local() + timedelta(days=offset)
+            for juego in get_schedule_cacheado(dia):
+                away = (juego.get("away_team") or "")
+                home = (juego.get("home_team") or "")
+                if bajo in (away.lower(), home.lower()):
+                    return f"{away} @ {home}"
     except Exception:
         log.debug("No pude deducir el partido de %s", nombre, exc_info=True)
     return None
@@ -598,8 +606,10 @@ def estado_apuestas(chat_id: int) -> dict[str, Any]:
         por_partido: dict[tuple[str, str], list[dict]] = {}
         for leg in legs_raw:
             nombre = (leg.get("match") or ticket.get("match") or "").strip()
-            if not nombre and leg.get("player"):
-                # Cupón que solo mostraba escudos: se deduce del jugador.
+            # No alcanza con "vacío": la IA a veces devuelve un texto que
+            # no identifica ningún equipo (guiones, "?", el nombre del
+            # mercado). Si no reconocemos DOS equipos, hay que deducirlo.
+            if leg.get("player") and len(equipos_en_texto(nombre)) < 2:
                 deducido = _partido_del_jugador(leg["player"])
                 if deducido:
                     nombre = deducido
