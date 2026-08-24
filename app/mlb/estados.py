@@ -15,8 +15,17 @@ from datetime import datetime, timezone
 
 from app.utils.tiempo import zona_local
 
-EN_CURSO = ("In Progress", "Manager challenge", "Warmup", "Delayed")
+# "Warmup" NO es en curso: la MLB lo marca ~20 minutos ANTES del primer
+# lanzamiento, y por eso la web mostraba el partido como live cuando
+# todavía no había empezado. "Delayed" tampoco: es demora, no juego.
+EN_CURSO = ("In Progress", "Manager challenge")
+
+# Estados de antesala: el partido es inminente pero no arrancó. Se
+# distinguen de "Scheduled" para poder mostrar "está por empezar" sin
+# mentir diciendo que ya está en juego.
+POR_EMPEZAR = ("Warmup", "Pre-Game", "Delayed")
 TERMINADO = ("Final", "Game Over", "Completed Early")
+# Los que ya tienen boxscore para consultar.
 CON_DATOS = EN_CURSO + TERMINADO
 
 # Cuántos días hacia atrás (y hacia adelante) buscar un partido antes de

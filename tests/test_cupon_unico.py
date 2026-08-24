@@ -121,9 +121,12 @@ class TestPartidoInservible:
         assert "len(equipos_en_texto(nombre)) < 2" in fuente
 
 
-class TestPartidoEnDiasCercanos:
-    def test_busca_tambien_manana(self):
-        """Una apuesta puede ser para el partido de mañana."""
+class TestPartidoSoloDeHoy:
+    """Las apuestas son SIEMPRE del día. Mirar "mañana" solo agregaba
+    chances de agarrar el partido equivocado cuando los mismos equipos
+    juegan una serie de varios días."""
+
+    def test_no_agarra_el_partido_de_manana(self):
         from unittest.mock import patch
         from datetime import date
 
@@ -133,6 +136,26 @@ class TestPartidoEnDiasCercanos:
 
         def _por_dia(dia=None):
             if dia == manana:
+                return [{"away_team": "Boston Red Sox", "home_team": "Miami Marlins"}]
+            return []
+
+        with patch("app.mlb.players.search_player",
+                   return_value={"id": 1, "full_name": "X", "team": "Boston Red Sox"}), \
+             patch("app.mlb.schedule.get_schedule_cacheado", side_effect=_por_dia), \
+             patch("app.utils.tiempo.hoy_local", return_value=date(2026, 8, 14)):
+            assert service._partido_del_jugador("X") is None
+
+    def test_ayer_sigue_valiendo_como_respaldo(self):
+        """Un partido nocturno sigue vivo pasada la medianoche."""
+        from unittest.mock import patch
+        from datetime import date
+
+        from app.web import service
+
+        ayer = date(2026, 8, 13)
+
+        def _por_dia(dia=None):
+            if dia == ayer:
                 return [{"away_team": "Boston Red Sox", "home_team": "Miami Marlins"}]
             return []
 

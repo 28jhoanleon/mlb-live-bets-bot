@@ -36,6 +36,7 @@ from app.db.database import (
 )
 from app.mlb.estados import CON_DATOS as _CON_DATOS
 from app.mlb.estados import EN_CURSO as _EN_CURSO
+from app.mlb.estados import POR_EMPEZAR as _POR_EMPEZAR
 from app.mlb.estados import TERMINADO as _TERMINADO
 from app.mlb.players import get_hitting_split_vs_hand, get_season_hitting_stats, search_player
 from app.analysis.probability import LegEstimate
@@ -79,10 +80,12 @@ def _partido_del_jugador(nombre: str) -> str | None:
 
     from app.utils.tiempo import hoy_local
 
-    # Hoy primero, después mañana y ayer: una apuesta puede ser para el
-    # partido de mañana, o quedar viva pasada la medianoche.
+    # SOLO hoy, y ayer como respaldo. Las apuestas siempre son del día;
+    # mirar "mañana" solo agregaba chances de agarrar el partido
+    # equivocado cuando los mismos equipos juegan una serie. Ayer se
+    # conserva porque un partido nocturno sigue vivo pasada la medianoche.
     try:
-        for offset in (0, 1, -1):
+        for offset in (0, -1):
             dia = hoy_local() + timedelta(days=offset)
             for juego in get_schedule_cacheado(dia):
                 away = (juego.get("away_team") or "")
@@ -507,6 +510,10 @@ def _armar_grupo(match_text: str, legs_raw: list[dict]) -> dict[str, Any]:
         "start": formato_hora_fecha(partido.get("game_time_utc")) if partido else None,
         "status": partido.get("status") if partido else None,
         "terminado": bool(partido and partido.get("status") in _TERMINADO),
+        # La MLB marca "Warmup" unos 20 minutos ANTES del primer
+        # lanzamiento. No es en vivo, pero avisar que está por arrancar
+        # sí sirve; antes se mostraba como si ya estuviera jugándose.
+        "por_empezar": bool(partido and partido.get("status") in _POR_EMPEZAR),
         "odds": (legs_raw[0].get("group_odds") if legs_raw else None),
         "legs": legs,
         "done": sum(1 for l in legs if l.get("state") == "done"),

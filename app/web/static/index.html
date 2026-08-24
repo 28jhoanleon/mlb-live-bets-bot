@@ -274,6 +274,7 @@ body{
 .ticket.is-dead{opacity:.55}
 .ticket.is-dead .tally b{color:var(--clay)}
 .final.dead{color:var(--clay);border-color:var(--clay)}
+.pronto{color:var(--amber);font-size:11.5px}
 .final.draft{color:var(--amber);border-color:var(--amber)}
 /* Barra del borrador: se decide acá mismo si se jugó o se descarta. */
 .draftbar{
@@ -667,7 +668,8 @@ function grupo(g, indice, total){
     ? `<span class="final">Final</span>`
     : (g.live && g.inning
         ? `<span class="pulse"></span> ${esc(g.inning)}ª ${esc(g.inning_state || '')}`
-        : (g.start ? `🕐 ${esc(g.start)}` : ''));
+        : (g.por_empezar ? `<span class="pronto">Por empezar</span>`
+          : (g.start ? `🕐 ${esc(g.start)}` : '')));
 
   const cuota = g.odds ? `<span class="godds">${esc(g.odds)}</span>` : '';
   const parte = total > 1 ? `<span class="gpart">Parte ${indice + 1} de ${total}</span>` : '';
