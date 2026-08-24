@@ -6,6 +6,7 @@ from app.bot.handlers import (
     borrar,
     calibracion,
     combos_historial,
+    diag,
     history,
     limpiar,
     mejorar,
@@ -101,6 +102,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("mejorar", mejorar.mejorar_cmd))
     app.add_handler(CommandHandler("borrar", borrar.borrar_cmd))
     app.add_handler(CommandHandler("limpiar", limpiar.limpiar_cmd))
+    app.add_handler(CommandHandler("diag", diag.diag_cmd))
     app.add_handler(CommandHandler("proveedor", proveedor.proveedor_cmd))
     # Alias: es natural escribirlo abreviado. Telegram NO acepta tildes
     # ni ñ en los comandos, así que /calibración no se puede registrar.

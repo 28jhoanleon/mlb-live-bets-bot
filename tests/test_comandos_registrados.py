@@ -11,7 +11,7 @@ ESPERADOS = {
     "start", "help", "miid",
     "value",
     "sonadora", "sonadoras", "combos", "refresh", "nueva",
-    "historial", "calibracion", "limpiar", "borrar", "mejorar", "proveedor",
+    "historial", "calibracion", "limpiar", "borrar", "mejorar", "proveedor", "diag",
 }
 
 
