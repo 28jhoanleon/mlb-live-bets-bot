@@ -18,6 +18,7 @@ from typing import Any
 
 from app.analysis.live_tracking import get_live_tracking_for_match, track_leg_live
 from app.analysis.probability import (
+    precalentar_cache,
     ProbabilityError,
     estimate_leg_detail,
     estimate_leg_probability,
@@ -766,6 +767,36 @@ def _sugerencias_para(player: str, market: str, line: str) -> dict[str, Any]:
 
 # --- Entrada desde la web ------------------------------------------------
 
+def _estimar_legs(tickets: list[dict]) -> None:
+    """Escribe en cada leg la probabilidad estimada ANTES de que se juegue.
+
+    Es el único número honesto para medir calibración después:
+    calcularlo más tarde estaría contaminado, porque los "últimos
+    partidos" ya incluirían el que se está jugando.
+    """
+    legs = [leg for t in tickets for leg in t.get("legs", []) if leg.get("player")]
+    if not legs:
+        return
+
+    # Traer los jugadores de una, en paralelo: de a uno son dos llamadas
+    # encadenadas por leg.
+    try:
+        precalentar_cache([l["player"] for l in legs])
+    except Exception:
+        log.debug("No pude precalentar para estimar", exc_info=True)
+
+    for leg in legs:
+        try:
+            est = estimate_leg_probability(
+                leg["player"], leg.get("market", ""), leg.get("line", "")
+            )
+            leg["prob_estimada"] = est.probability_pct
+        except Exception:
+            # Una leg sin estimación no cuenta para calibración, pero no
+            # puede impedir que se guarde la apuesta.
+            log.debug("Sin estimación para %s", leg.get("player"), exc_info=True)
+
+
 def guardar_captura(chat_id: int, imagenes: list[bytes], borrador: bool = False) -> dict[str, Any]:
     """Analiza capturas subidas desde la web y las guarda.
 
@@ -799,8 +830,14 @@ def guardar_captura(chat_id: int, imagenes: list[bytes], borrador: bool = False)
         for t in analisis.get("bets", []):
             t["borrador"] = True
 
-    # La probabilidad estimada de cada leg se calcula al armar el estado
-    # (la primera vez que se muestra), igual que en el bot.
+    # Estimar ANTES de guardar. Este comentario decía antes que la
+    # probabilidad "se calcula al armar el estado", y era falso: nadie la
+    # calculaba en el camino web. Las apuestas subidas desde la página se
+    # guardaban sin prob_estimada, se registraban con el campo vacío y la
+    # consulta de calibración las descarta -- por eso el contador no
+    # subía aunque los partidos terminaran.
+    _estimar_legs(tickets)
+
     save_active_bet(chat_id, analisis)
     if not borrador:
         try:

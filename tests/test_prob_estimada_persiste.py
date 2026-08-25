@@ -97,3 +97,78 @@ class TestSinProbabilidadNoHayCalibracion:
              "prob_estimada": 78.0, "se_dio": True},
         ])
         assert database.resumen_calibracion(1)["total"] == 1
+
+
+class TestElCaminoWebTambienEstima:
+    """Bug real: los partidos terminaban y el contador de calibración no
+    subía.
+
+    El cálculo de prob_estimada vivía SOLO en el camino de Telegram. Las
+    apuestas subidas desde la web se guardaban sin ese campo, se
+    registraban con el valor vacío, y la consulta de calibración las
+    descarta. Como el usuario cargaba todo desde la web, la calibración
+    quedó congelada en 81 legs.
+    """
+
+    def test_la_carga_web_calcula_la_probabilidad(self, tmp_path, monkeypatch):
+        from unittest.mock import patch
+
+        monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/w.db")
+        from app.db import database
+
+        monkeypatch.setattr(database, "_db_path", lambda: str(tmp_path / "w.db"))
+        database.init_db()
+
+        from app.analysis.probability import LegEstimate
+        from app.web.service import guardar_captura
+
+        vision = {"bets": [{"total_odds": "3.5", "legs": [
+            {"match": "Rays @ Tigers", "player": "Yandy Diaz",
+             "market": "batter_hits", "line": "Over 0.5"},
+        ]}]}
+
+        def _est(p, m, l):
+            return LegEstimate(player=p, market=m, side="Over", threshold=0.5,
+                               probability_pct=74.1, sample_size=25,
+                               avg_value=1.32, is_pitcher=False)
+
+        with patch("app.ai.vision.analyze_bet_screenshot", return_value=vision), \
+             patch("app.web.service.precalentar_cache"), \
+             patch("app.web.service.estimate_leg_probability", side_effect=_est):
+            assert guardar_captura(1, [b"img"])["ok"] is True
+
+        leg = database.get_active_bet(1)["bets"][0]["legs"][0]
+        assert leg.get("prob_estimada") == 74.1
+
+    def test_una_leg_sin_estimacion_no_impide_guardar(self, tmp_path, monkeypatch):
+        """Que falle el cálculo de una leg no puede perder la apuesta."""
+        from unittest.mock import patch
+
+        monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/x.db")
+        from app.db import database
+
+        monkeypatch.setattr(database, "_db_path", lambda: str(tmp_path / "x.db"))
+        database.init_db()
+
+        from app.web.service import guardar_captura
+
+        vision = {"bets": [{"total_odds": "3.5", "legs": [
+            {"match": "A @ B", "player": "Fantasma",
+             "market": "batter_hits", "line": "Over 0.5"},
+        ]}]}
+
+        with patch("app.ai.vision.analyze_bet_screenshot", return_value=vision), \
+             patch("app.web.service.precalentar_cache"), \
+             patch("app.web.service.estimate_leg_probability",
+                   side_effect=ConnectionError("cortó")):
+            assert guardar_captura(1, [b"img"])["ok"] is True
+
+        assert database.get_active_bet(1) is not None
+
+    def test_se_estima_antes_de_guardar(self):
+        import pathlib
+
+        fuente = pathlib.Path("app/web/service.py").read_text()
+        i_est = fuente.index("_estimar_legs(tickets)")
+        i_save = fuente.index("save_active_bet(chat_id, analisis)")
+        assert i_est < i_save
