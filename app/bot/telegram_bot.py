@@ -7,6 +7,7 @@ from app.bot.handlers import (
     calibracion,
     combos_historial,
     diag,
+    fuentes,
     grupo,
     history,
     limpiar,
@@ -103,6 +104,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("mejorar", mejorar.mejorar_cmd))
     app.add_handler(CommandHandler("borrar", borrar.borrar_cmd))
     app.add_handler(CommandHandler("limpiar", limpiar.limpiar_cmd))
+    app.add_handler(CommandHandler("fuentes", fuentes.fuentes_cmd))
     app.add_handler(CommandHandler("diag", diag.diag_cmd))
     app.add_handler(CommandHandler("proveedor", proveedor.proveedor_cmd))
     # Alias: es natural escribirlo abreviado. Telegram NO acepta tildes

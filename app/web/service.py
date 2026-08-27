@@ -592,11 +592,18 @@ def _registrar_para_calibracion(
 
 
 def _ticket_id(ticket: dict, legs_raw: list[dict]) -> str:
-    """Id estable de un ticket, a partir de lo que NO cambia con el
-    tiempo (label, cuota total, y qué legs son). El estado en vivo sí
-    cambia en cada refresco, por eso no puede ser parte del id."""
+    """Id estable de un ticket.
+
+    Se arma con lo que identifica la apuesta y NO cambia con el tiempo:
+    jugador, mercado y línea de cada tramo, más la etiqueta y la cuota.
+
+    OJO con lo que NO entra acá: el `match`. Cuando el cupón no trae el
+    partido, se deduce a partir del jugador y se ESCRIBE en la leg. Si
+    el partido formara parte del id, el que muestra la web (con partido
+    deducido) sería distinto del que se recalcula al borrar (sin él), y
+    el botón × no encontraría nunca la apuesta. Es lo que pasaba.
+    """
     piezas = "|".join(sorted(
-        f"{l.get('match', '')}~{str(l.get('match_datetime') or '')[:10]}~"
         f"{l.get('player', '')}~{l.get('market', '')}~{l.get('line', '')}"
         for l in legs_raw
     ))

@@ -93,6 +93,17 @@ def init_db() -> None:
                 UNIQUE (chat_id, ticket_id, jugador, mercado, linea)
             );
 
+            CREATE TABLE IF NOT EXISTS fuentes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre TEXT NOT NULL,
+                grupo TEXT NOT NULL UNIQUE,
+                autores TEXT,          -- lista separada por comas; vacío = todos
+                requiere_foto INTEGER DEFAULT 0,
+                requiere_link INTEGER DEFAULT 0,
+                palabras TEXT,         -- alguna de estas debe aparecer; vacío = cualquiera
+                activa INTEGER DEFAULT 1
+            );
+
             CREATE TABLE IF NOT EXISTS mensajes_grupo (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 origen TEXT,
@@ -617,3 +628,42 @@ def leer_mensajes_grupo(limite: int = 50) -> list[dict[str, Any]]:
             (limite,),
         ).fetchall()
     return [dict(f) for f in filas]
+
+
+# ---------- fuentes de picks ----------
+#
+# Cada fuente es un grupo de Telegram con sus propios filtros. Sirve
+# para seguir varios a la vez con criterios distintos: de uno querés
+# todo, de otro solo lo que publica cierta persona con foto.
+
+def agregar_fuente(
+    nombre: str, grupo: str, autores: str = "", requiere_foto: bool = False,
+    requiere_link: bool = False, palabras: str = "",
+) -> None:
+    with _connection() as conn:
+        conn.execute(
+            "INSERT INTO fuentes (nombre, grupo, autores, requiere_foto, "
+            "requiere_link, palabras) VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(grupo) DO UPDATE SET nombre=excluded.nombre, "
+            "autores=excluded.autores, requiere_foto=excluded.requiere_foto, "
+            "requiere_link=excluded.requiere_link, palabras=excluded.palabras, "
+            "activa=1",
+            (nombre, grupo.strip().lstrip("@"), autores, int(requiere_foto),
+             int(requiere_link), palabras),
+        )
+
+
+def listar_fuentes(solo_activas: bool = True) -> list[dict[str, Any]]:
+    consulta = "SELECT * FROM fuentes"
+    if solo_activas:
+        consulta += " WHERE activa = 1"
+    with _connection() as conn:
+        return [dict(f) for f in conn.execute(consulta + " ORDER BY id").fetchall()]
+
+
+def borrar_fuente(grupo: str) -> bool:
+    with _connection() as conn:
+        cur = conn.execute(
+            "DELETE FROM fuentes WHERE grupo = ?", (grupo.strip().lstrip("@"),)
+        )
+        return cur.rowcount > 0

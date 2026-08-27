@@ -31,20 +31,33 @@ from __future__ import annotations
 import asyncio
 
 from app.config import settings
-from app.db.database import guardar_mensaje_grupo
+from app.db.database import guardar_mensaje_grupo, listar_fuentes
+from app.lector.filtros import pasa
 from app.utils.logger import get_logger
 
 log = get_logger(__name__)
 
 
 def configurado() -> bool:
-    """¿Están las tres variables necesarias?"""
+    """¿Están las credenciales? Las fuentes se configuran aparte, desde
+    el bot, así que acá solo importan las tres de la sesión."""
     return bool(
         settings.telegram_api_id
         and settings.telegram_api_hash
         and settings.telegram_session
-        and settings.telegram_grupo
     )
+
+
+def _fuente_de(chat, fuentes: list[dict]) -> dict | None:
+    """Busca a qué fuente configurada pertenece este chat.
+
+    Si no pertenece a ninguna, el mensaje se descarta sin tocarse: la
+    sesión ve TODOS los chats del usuario y solo queremos los elegidos.
+    """
+    for fuente in fuentes:
+        if _es_el_grupo(chat, fuente["grupo"]):
+            return fuente
+    return None
 
 
 def _es_el_grupo(chat, esperado: str) -> bool:
@@ -82,8 +95,6 @@ async def escuchar() -> None:
         log.warning("Telethon no está instalado; el lector no arranca")
         return
 
-    grupo = settings.telegram_grupo
-
     cliente = TelegramClient(
         StringSession(settings.telegram_session),
         int(settings.telegram_api_id),
@@ -93,7 +104,14 @@ async def escuchar() -> None:
     @cliente.on(events.NewMessage())
     async def _entrante(evento):
         try:
-            if not _es_el_grupo(await evento.get_chat(), grupo):
+            # Las fuentes se leen en cada mensaje para que agregar o
+            # quitar una desde el bot tenga efecto sin reiniciar.
+            fuentes = await asyncio.to_thread(listar_fuentes)
+            if not fuentes:
+                return
+
+            fuente = _fuente_de(await evento.get_chat(), fuentes)
+            if fuente is None:
                 return  # cualquier otro chat: ni se toca
 
             texto = (evento.message.message or "").strip()
@@ -107,15 +125,25 @@ async def escuchar() -> None:
             except Exception:
                 pass
 
-            await asyncio.to_thread(guardar_mensaje_grupo, grupo, autor, texto)
-            log.info("Mensaje del grupo guardado (%d caracteres)", len(texto))
+            con_foto = bool(getattr(evento.message, "photo", None))
+            if not pasa(fuente, texto, autor, con_foto):
+                return
+
+            await asyncio.to_thread(
+                guardar_mensaje_grupo, fuente["nombre"], autor, texto
+            )
+            log.info("Guardado de %s (%d caracteres)", fuente["nombre"], len(texto))
         except Exception:
             log.exception("Error procesando un mensaje del grupo")
 
     while True:
         try:
             await cliente.start()
-            log.info("Lector conectado, escuchando %s", grupo)
+            fuentes = await asyncio.to_thread(listar_fuentes)
+            log.info(
+                "Lector conectado · %d fuente(s): %s",
+                len(fuentes), ", ".join(f["nombre"] for f in fuentes) or "ninguna",
+            )
             await cliente.run_until_disconnected()
         except Exception:
             log.exception("El lector se cayó; reintento en 60s")

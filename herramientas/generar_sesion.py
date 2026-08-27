@@ -42,10 +42,13 @@ def main() -> None:
         sys.exit("El API ID tiene que ser un número.")
 
     with TelegramClient(StringSession(), int(api_id), api_hash) as cliente:
+        # Nada de get_me() acá: dentro del `with` de Telethon devuelve
+        # una corrutina sin resolver y rompía el script JUSTO DESPUÉS de
+        # iniciar sesión, o sea en el peor momento: la sesión quedaba
+        # creada pero nunca se imprimía. Era solo cosmético.
         sesion = cliente.session.save()
-        yo = cliente.get_me()
 
-        print(f"\nListo. Sesión iniciada como: {yo.first_name}")
+        print("\nListo, sesión iniciada.")
         print("\nCargá esto en Railway (Variables):\n")
         print(f"  TELEGRAM_API_ID    = {api_id}")
         print(f"  TELEGRAM_API_HASH  = {api_hash}")

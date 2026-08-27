@@ -21,7 +21,10 @@ def db(tmp_path, monkeypatch):
 def _apuesta(borrador=False, n=1):
     tickets = []
     for i in range(n):
-        t = {"legs": [{"match": f"A{i} @ B{i}", "player": "X",
+        # Los tickets tienen que diferenciarse por JUGADOR, no por
+        # partido: el partido no entra en el id (se deduce y se
+        # sobreescribe, así que no es estable).
+        t = {"legs": [{"match": f"A{i} @ B{i}", "player": f"Jugador {i}",
                        "market": "batter_hits", "line": "Over 0.5"}],
              "total_odds": "2.0"}
         if borrador:
@@ -282,3 +285,53 @@ class TestCuotaManual:
 
         fuente = pathlib.Path("app/web/api.py").read_text()
         assert '.replace(",", ".")' in fuente
+
+
+class TestElIdNoCambiaAlDeducirElPartido:
+    """Bug real: el botón × devolvía "No se pudo aplicar el cambio".
+
+    Cuando el cupón no trae el partido, se deduce del jugador y se
+    ESCRIBE en la leg. Como el partido formaba parte del identificador,
+    el id que mostraba la web (ya con el partido deducido) era distinto
+    del que se recalculaba al borrar (leyendo de la base, sin él). Nunca
+    coincidían, así que no encontraba la apuesta.
+    """
+
+    def test_el_id_es_el_mismo_con_y_sin_partido(self):
+        ticket = {"total_odds": "25.31"}
+        sin = [{"player": "Yandy Diaz", "market": "batter_hits", "line": "Over 0.5"}]
+        con = [{"player": "Yandy Diaz", "market": "batter_hits", "line": "Over 0.5",
+                "match": "Tampa Bay Rays @ Detroit Tigers"}]
+        assert _ticket_id(ticket, sin) == _ticket_id(ticket, con)
+
+    def test_sigue_distinguiendo_apuestas_distintas(self):
+        """El id tiene que seguir siendo único: si dos apuestas dieran
+        el mismo, borrar una borraría la otra."""
+        a = [{"player": "Judge", "market": "batter_hits", "line": "Over 0.5"}]
+        b = [{"player": "Ohtani", "market": "batter_hits", "line": "Over 0.5"}]
+        assert _ticket_id({}, a) != _ticket_id({}, b)
+
+    def test_distingue_por_linea(self):
+        a = [{"player": "Judge", "market": "batter_hits", "line": "Over 0.5"}]
+        b = [{"player": "Judge", "market": "batter_hits", "line": "Over 1.5"}]
+        assert _ticket_id({}, a) != _ticket_id({}, b)
+
+    def test_distingue_por_cuota(self):
+        legs = [{"player": "Judge", "market": "batter_hits", "line": "Over 0.5"}]
+        assert _ticket_id({"total_odds": "2.0"}, legs) != _ticket_id({"total_odds": "3.0"}, legs)
+
+    def test_borrar_funciona_con_el_partido_deducido(self, db):
+        """El caso completo, de punta a punta."""
+        from app.analysis.tickets import normalize
+
+        db.save_active_bet(1, {"bets": [{"total_odds": "25.31", "legs": [
+            {"player": "Yandy Diaz", "market": "batter_hits", "line": "Over 0.5"},
+        ]}], "is_live": False})
+
+        # La web muestra el id calculado sobre legs YA con partido.
+        vista = normalize(db.get_active_bet(1))
+        con_partido = [dict(l, match="Rays @ Tigers") for l in vista[0]["legs"]]
+        id_visible = _ticket_id(vista[0], con_partido)
+
+        assert db.descartar_ticket(1, id_visible, _ticket_id) is True
+        assert db.get_active_bet(1) is None

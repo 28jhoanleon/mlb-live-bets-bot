@@ -228,6 +228,13 @@ body{
 .mtramo.ok{color:var(--green)}
 .mtramo i{color:var(--muted);font-style:normal;font-size:11px}
 .mejora__tot{margin-top:7px;font-size:12.5px;color:var(--chalk)}
+.fuentes{display:flex;gap:6px;flex-wrap:wrap;margin:0 14px 12px}
+.ftag{
+  border:1px solid var(--line);background:transparent;color:var(--muted);
+  font-size:11.5px;padding:4px 10px;border-radius:20px;cursor:pointer;
+  font-family:inherit;
+}
+.ftag.activa{color:var(--chalk);border-color:var(--muted)}
 .msg{margin:0 14px 10px;padding:11px 13px;border:1px solid var(--line);border-radius:var(--r)}
 .msg__head{display:flex;gap:8px;align-items:baseline;font-size:11.5px;margin-bottom:6px;flex-wrap:wrap}
 .msg__head b{font-size:12.5px}
@@ -1193,8 +1200,20 @@ async function cargarMensajes(){
     }
     estado.hidden = true;
 
-    document.getElementById('listaMensajes').innerHTML = d.mensajes.map(m => `
-      <div class="msg">
+    // Selector de fuente: con varios grupos seguidos, una lista sola
+    // vuelve a ser un chat entero.
+    const origenes = [...new Set(d.mensajes.map(m => m.origen).filter(Boolean))];
+    const filtro = origenes.length > 1
+      ? `<div class="fuentes">
+           <button class="ftag activa" onclick="filtrarFuente(null,this)">Todas</button>
+           ${origenes.map(o =>
+             `<button class="ftag" onclick="filtrarFuente('${esc(o)}',this)">${esc(o)}</button>`
+           ).join('')}
+         </div>`
+      : '';
+
+    document.getElementById('listaMensajes').innerHTML = filtro + d.mensajes.map(m => `
+      <div class="msg" data-origen="${esc(m.origen || '')}">
         <div class="msg__head">
           <b>${esc(m.origen || '?')}</b>
           ${m.autor ? `<span>${esc(m.autor)}</span>` : ''}
@@ -1205,6 +1224,14 @@ async function cargarMensajes(){
   } catch (e) {
     estado.textContent = 'No pude traerlos: ' + e.message;
   }
+}
+
+function filtrarFuente(origen, btn){
+  document.querySelectorAll('.ftag').forEach(b => b.classList.remove('activa'));
+  btn.classList.add('activa');
+  document.querySelectorAll('.msg').forEach(m => {
+    m.hidden = origen !== null && m.dataset.origen !== origen;
+  });
 }
 
 function toggleTicket(el){
