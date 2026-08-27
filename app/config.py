@@ -30,6 +30,8 @@ class Settings:
     telegram_api_hash: str = os.getenv("TELEGRAM_API_HASH", "")
     telegram_session: str = os.getenv("TELEGRAM_SESSION", "")
     telegram_grupo: str = os.getenv("TELEGRAM_GRUPO", "")
+    # Emojis que, al reaccionar vos, guardan ese mensaje.
+    telegram_emojis: str = os.getenv("TELEGRAM_EMOJIS", "")
     # Casas donde el usuario realmente juega. Se usan para PRIORIZAR qué
     # apuestas mostrar, no para calcular la probabilidad justa: esa se
     # sigue calculando con todas las casas disponibles, porque un

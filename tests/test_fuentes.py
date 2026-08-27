@@ -126,3 +126,75 @@ class TestElLectorUsaLasFuentes:
         ]
         chat = types.SimpleNamespace(username="grupo_b", id=1)
         assert _fuente_de(chat, fuentes)["nombre"] == "B"
+
+
+class TestFiltroPorCasaDeApuestas:
+    """Quedarse solo con los picks que traen el cupón para copiar, y
+    descartar los comentarios sueltos."""
+
+    def test_reconoce_el_stake_argentino(self):
+        from app.lector.filtros import tiene_casa
+
+        assert tiene_casa("mirá https://pba.stake.bet.ar/sports/x", "stake")
+
+    def test_reconoce_bet365(self):
+        from app.lector.filtros import tiene_casa
+
+        assert tiene_casa("link de bet365.com/apuesta", "bet365")
+
+    def test_descarta_otras_casas(self):
+        """Si pediste solo stake y bet365, betano no pasa."""
+        from app.lector.filtros import tiene_casa
+
+        assert not tiene_casa("https://betano.bet.ar/x", "stake,bet365")
+
+    def test_descarta_texto_sin_link(self):
+        from app.lector.filtros import tiene_casa
+
+        assert not tiene_casa("hoy va a estar bueno el partido", "stake")
+
+    def test_sin_casas_pedidas_pasa_todo(self):
+        from app.lector.filtros import tiene_casa
+
+        assert tiene_casa("cualquier cosa", "")
+
+    def test_acepta_un_dominio_escrito_a_mano(self):
+        """Si nombrás una casa que no está en la tabla, se busca tal cual."""
+        from app.lector.filtros import tiene_casa
+
+        assert tiene_casa("https://casarara.com/x", "casarara.com")
+
+    def test_se_guarda_en_la_fuente(self, db):
+        db.agregar_fuente("Ludo", "grupo1", casas="stake,bet365")
+        assert db.listar_fuentes()[0]["casas"] == "stake,bet365"
+
+
+class TestCapturaPorReaccion:
+    """Reaccionar con un emoji guarda ese mensaje aunque no cumpla
+    ningún filtro: es curación manual sin escribir nada."""
+
+    def test_hay_emojis_por_defecto(self):
+        from app.lector.cliente import _emojis_configurados
+
+        assert _emojis_configurados()
+
+    def test_solo_cuentan_las_reacciones_propias(self):
+        """Que otro reaccione no debe guardar nada."""
+        import pathlib
+
+        fuente = pathlib.Path("app/lector/cliente.py").read_text()
+        assert "yo_id" in fuente
+        assert "user_id\", None) == yo_id" in fuente
+
+    def test_una_reaccion_distinta_no_guarda(self):
+        from app.lector.cliente import _emojis_configurados
+
+        assert "💩" not in _emojis_configurados()
+
+    def test_funciona_aunque_el_chat_no_sea_fuente(self):
+        """Si marcás algo de otro grupo, se guarda igual: fuiste vos
+        quien lo eligió explícitamente."""
+        import pathlib
+
+        fuente = pathlib.Path("app/lector/cliente.py").read_text()
+        assert 'origen = fuente["nombre"] if fuente else "marcado con reacción"' in fuente

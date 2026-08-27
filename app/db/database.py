@@ -101,6 +101,7 @@ def init_db() -> None:
                 requiere_foto INTEGER DEFAULT 0,
                 requiere_link INTEGER DEFAULT 0,
                 palabras TEXT,         -- alguna de estas debe aparecer; vacío = cualquiera
+                casas TEXT,            -- solo links de estas casas; vacío = cualquier link
                 activa INTEGER DEFAULT 1
             );
 
@@ -638,18 +639,18 @@ def leer_mensajes_grupo(limite: int = 50) -> list[dict[str, Any]]:
 
 def agregar_fuente(
     nombre: str, grupo: str, autores: str = "", requiere_foto: bool = False,
-    requiere_link: bool = False, palabras: str = "",
+    requiere_link: bool = False, palabras: str = "", casas: str = "",
 ) -> None:
     with _connection() as conn:
         conn.execute(
             "INSERT INTO fuentes (nombre, grupo, autores, requiere_foto, "
-            "requiere_link, palabras) VALUES (?, ?, ?, ?, ?, ?) "
+            "requiere_link, palabras, casas) VALUES (?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(grupo) DO UPDATE SET nombre=excluded.nombre, "
             "autores=excluded.autores, requiere_foto=excluded.requiere_foto, "
             "requiere_link=excluded.requiere_link, palabras=excluded.palabras, "
-            "activa=1",
+            "casas=excluded.casas, activa=1",
             (nombre, grupo.strip().lstrip("@"), autores, int(requiere_foto),
-             int(requiere_link), palabras),
+             int(requiere_link), palabras, casas),
         )
 
 

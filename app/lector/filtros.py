@@ -41,6 +41,37 @@ def tiene_link(texto: str) -> bool:
     return bool(_LINK.search(texto or ""))
 
 
+# Dominios conocidos de cada casa. Alcanza con nombrar la casa
+# ("stake") y no hace falta acordarse de todos sus dominios: Stake usa
+# varios según el país, y pba.stake.bet.ar es el de Buenos Aires.
+_CASAS = {
+    "stake": ("stake.bet.ar", "pba.stake", "stake.com", "stake.bet"),
+    "bet365": ("bet365.com", "bet365.bet.ar", "bet365"),
+    "betano": ("betano.bet.ar", "betano.com", "betano"),
+    "codere": ("codere.bet.ar", "codere.com"),
+    "bplay": ("bplay.bet.ar", "bplay.com"),
+    "betsson": ("betsson.bet.ar", "betsson.com"),
+}
+
+
+def tiene_casa(texto: str, casas: str | None) -> bool:
+    """¿El mensaje trae un link de alguna de las casas pedidas?
+
+    Sirve para quedarse solo con los picks que traen el cupón para
+    copiar, y descartar los comentarios sueltos."""
+    pedidas = _lista(casas)
+    if not pedidas:
+        return True
+
+    bajo = (texto or "").lower()
+    for casa in pedidas:
+        # Por nombre conocido, o por si escribiste el dominio directo.
+        for dominio in _CASAS.get(casa, (casa,)):
+            if dominio in bajo:
+                return True
+    return False
+
+
 def pasa(fuente: dict, texto: str, autor: str | None, con_foto: bool) -> bool:
     """¿Este mensaje cumple lo que pide la fuente?"""
     if not autor_permitido(autor, fuente.get("autores")):
@@ -50,5 +81,7 @@ def pasa(fuente: dict, texto: str, autor: str | None, con_foto: bool) -> bool:
     if fuente.get("requiere_link") and not tiene_link(texto):
         return False
     if not tiene_palabra(texto, fuente.get("palabras")):
+        return False
+    if not tiene_casa(texto, fuente.get("casas")):
         return False
     return True

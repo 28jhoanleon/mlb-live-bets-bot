@@ -28,10 +28,14 @@ _AYUDA = """*Fuentes de picks*
 `foto` — solo mensajes con imagen
 `link` — solo mensajes con un enlace
 `con:mlb,over` — solo si aparece alguna de esas palabras
+`casa:stake,bet365` — solo con link de esas casas
 
 *Ejemplos:*
 `/fuentes add ludogallina2024 Ludo MLB con:mlb`
 `/fuentes add otrogrupo Picks autor:Juan foto`
+`/fuentes add ludogallina2024 Ludo casa:stake,bet365`
+
+*Reaccionar también guarda:* poné ⭐ 🔥 ✅ o 👍 a cualquier mensaje del grupo y se guarda, aunque no cumpla ningún filtro.
 """
 
 
@@ -45,6 +49,8 @@ def _describir(f: dict) -> str:
         partes.append("con link")
     if f.get("palabras"):
         partes.append(f"palabras: {f['palabras']}")
+    if f.get("casas"):
+        partes.append(f"casas: {f['casas']}")
     filtros = " · ".join(partes) or "sin filtros"
     return f"*{escape_md(f['nombre'])}* (@{escape_md(f['grupo'])})\n   _{escape_md(filtros)}_"
 
@@ -88,7 +94,7 @@ async def fuentes_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     grupo = args[1]
-    autores, palabras = "", ""
+    autores, palabras, casas = "", "", ""
     foto = link = False
     nombre_partes = []
 
@@ -98,6 +104,8 @@ async def fuentes_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             autores = token.split(":", 1)[1]
         elif bajo.startswith("con:"):
             palabras = token.split(":", 1)[1]
+        elif bajo.startswith("casa:") or bajo.startswith("casas:"):
+            casas = token.split(":", 1)[1]
         elif bajo == "foto":
             foto = True
         elif bajo == "link":
@@ -108,7 +116,7 @@ async def fuentes_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     nombre = " ".join(nombre_partes) or grupo
 
     try:
-        agregar_fuente(nombre, grupo, autores, foto, link, palabras)
+        agregar_fuente(nombre, grupo, autores, foto, link, palabras, casas)
     except Exception:
         log.exception("No pude guardar la fuente")
         await update.message.reply_text("No pude guardarla. Está en los logs.")

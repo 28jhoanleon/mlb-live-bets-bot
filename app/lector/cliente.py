@@ -48,6 +48,15 @@ def configurado() -> bool:
     )
 
 
+def _emojis_configurados() -> set[str]:
+    """Emojis que marcan un mensaje para guardar.
+
+    Configurables por variable de entorno; por defecto los que uno usa
+    naturalmente para señalar algo interesante."""
+    crudo = (settings.telegram_emojis or "⭐,🔥,✅,👍").strip()
+    return {e.strip() for e in crudo.split(",") if e.strip()}
+
+
 def _fuente_de(chat, fuentes: list[dict]) -> dict | None:
     """Busca a qué fuente configurada pertenece este chat.
 
@@ -100,6 +109,64 @@ async def escuchar() -> None:
         int(settings.telegram_api_id),
         settings.telegram_api_hash,
     )
+
+    # --- Captura por reacción ---------------------------------------
+    #
+    # Reaccionar a un mensaje con un emoji lo guarda, aunque no cumpla
+    # ningún filtro. Es curación manual sin fricción: leés el grupo como
+    # siempre y marcás lo que te sirve con un toque.
+    #
+    # Solo cuentan TUS reacciones. Que otro reaccione no guarda nada.
+    from telethon.tl.types import UpdateMessageReactions
+
+    yo_id: int | None = None
+
+    @cliente.on(events.Raw(UpdateMessageReactions))
+    async def _reaccion(update):
+        nonlocal yo_id
+        try:
+            emojis = _emojis_configurados()
+            if not emojis:
+                return
+
+            if yo_id is None:
+                yo_id = (await cliente.get_me()).id
+
+            reacciones = getattr(update.reactions, "recent_reactions", None) or []
+            mias = [
+                r for r in reacciones
+                if getattr(getattr(r, "peer_id", None), "user_id", None) == yo_id
+            ]
+            if not mias:
+                return
+
+            emoji = getattr(mias[-1].reaction, "emoticon", None)
+            if emoji not in emojis:
+                return
+
+            mensaje = await cliente.get_messages(update.peer, ids=update.msg_id)
+            if mensaje is None:
+                return
+
+            texto = (mensaje.message or "").strip()
+            if not texto:
+                return
+
+            autor = None
+            try:
+                remitente = await mensaje.get_sender()
+                autor = getattr(remitente, "first_name", None)
+            except Exception:
+                pass
+
+            fuentes = await asyncio.to_thread(listar_fuentes)
+            fuente = _fuente_de(await mensaje.get_chat(), fuentes)
+            origen = fuente["nombre"] if fuente else "marcado con reacción"
+
+            await asyncio.to_thread(guardar_mensaje_grupo, origen, autor, texto)
+            log.info("Guardado por reacción %s desde %s", emoji, origen)
+        except Exception:
+            log.exception("Error procesando una reacción")
 
     @cliente.on(events.NewMessage())
     async def _entrante(evento):
