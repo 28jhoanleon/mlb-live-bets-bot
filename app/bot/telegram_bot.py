@@ -7,6 +7,7 @@ from app.bot.handlers import (
     calibracion,
     combos_historial,
     diag,
+    grupo,
     history,
     limpiar,
     mejorar,
@@ -135,6 +136,11 @@ def build_app() -> Application:
         )),)
         if presente
     ]
+    # Publicaciones de canal y reenvíos: la vía para seguir un grupo de
+    # picks ajeno sin exponer tu cuenta personal.
+    app.add_handler(MessageHandler(filters.UpdateType.CHANNEL_POST, grupo.capturar))
+    app.add_handler(MessageHandler(filters.FORWARDED & filters.TEXT, grupo.capturar))
+
     app.add_error_handler(_manejar_error)
     app.post_init = _registrar_menu
 

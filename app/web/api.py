@@ -339,6 +339,20 @@ async def cuota_manual(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True, "cuota": f"{valor:g}"})
 
 
+async def mensajes_api(request: Request) -> JSONResponse:
+    """Mensajes capturados del grupo de picks."""
+    if not _clave_ok(request.query_params.get("k")):
+        return JSONResponse({"detail": "Clave incorrecta"}, status_code=401)
+
+    from app.db.database import leer_mensajes_grupo
+
+    try:
+        return JSONResponse({"mensajes": await asyncio.to_thread(leer_mensajes_grupo)})
+    except Exception:
+        log.exception("Error leyendo los mensajes del grupo")
+        return JSONResponse({"detail": "No pude leerlos"}, status_code=500)
+
+
 async def index(request: Request) -> FileResponse:
     return FileResponse(ESTATICOS / "index.html")
 
@@ -365,6 +379,7 @@ app = Starlette(
         Route("/api/captura", subir_captura, methods=["POST"]),
         Route("/api/mejorar", mejorar_api),
         Route("/api/cuota", cuota_manual),
+        Route("/api/mensajes", mensajes_api),
         Route("/api/creditos", creditos_api),
     ]
 )

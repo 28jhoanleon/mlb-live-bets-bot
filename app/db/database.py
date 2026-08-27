@@ -93,6 +93,15 @@ def init_db() -> None:
                 UNIQUE (chat_id, ticket_id, jugador, mercado, linea)
             );
 
+            CREATE TABLE IF NOT EXISTS mensajes_grupo (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                origen TEXT,
+                autor TEXT,
+                texto TEXT NOT NULL,
+                recibido_en TEXT NOT NULL,
+                UNIQUE (origen, texto)
+            );
+
             CREATE TABLE IF NOT EXISTS ajustes (
                 clave TEXT PRIMARY KEY,
                 valor TEXT
@@ -588,3 +597,23 @@ def fijar_cuota_ticket(chat_id: int, ticket_id: str, cuota: str, calcular_id) ->
     if encontrado:
         save_active_bet(chat_id, {**actual, "bets": vista})
     return encontrado
+
+
+def guardar_mensaje_grupo(origen: str, autor: str | None, texto: str) -> None:
+    """Guarda un mensaje llegado desde un grupo o canal de picks."""
+    with _connection() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO mensajes_grupo (origen, autor, texto, recibido_en) "
+            "VALUES (?, ?, ?, ?)",
+            (origen, autor, texto, datetime.now(timezone.utc).isoformat()),
+        )
+
+
+def leer_mensajes_grupo(limite: int = 50) -> list[dict[str, Any]]:
+    with _connection() as conn:
+        filas = conn.execute(
+            "SELECT origen, autor, texto, recibido_en FROM mensajes_grupo "
+            "ORDER BY id DESC LIMIT ?",
+            (limite,),
+        ).fetchall()
+    return [dict(f) for f in filas]

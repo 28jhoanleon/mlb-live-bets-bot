@@ -228,6 +228,12 @@ body{
 .mtramo.ok{color:var(--green)}
 .mtramo i{color:var(--muted);font-style:normal;font-size:11px}
 .mejora__tot{margin-top:7px;font-size:12.5px;color:var(--chalk)}
+.msg{margin:0 14px 10px;padding:11px 13px;border:1px solid var(--line);border-radius:var(--r)}
+.msg__head{display:flex;gap:8px;align-items:baseline;font-size:11.5px;margin-bottom:6px;flex-wrap:wrap}
+.msg__head b{font-size:12.5px}
+.msg__head span{color:var(--muted)}
+.msg__head i{color:var(--muted);font-style:normal;margin-left:auto;opacity:.7}
+.msg__txt{font-size:13px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
 .son{margin:0 14px 12px;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
 .son__head{
   display:flex;justify-content:space-between;align-items:center;
@@ -531,6 +537,7 @@ body{
   <button class="tab activa" data-vista="apuestas" onclick="cambiarVista('apuestas')">Mis apuestas</button>
   <button class="tab" data-vista="armar" onclick="cambiarVista('armar')">Armar</button>
   <button class="tab" data-vista="sonadoras" onclick="cambiarVista('sonadoras')">Soñadoras</button>
+  <button class="tab" data-vista="grupo" onclick="cambiarVista('grupo')">Grupo</button>
 </nav>
 <div class="acciones">
   <label class="accion">
@@ -549,6 +556,10 @@ body{
   <div id="listaPicks"></div>
 </main>
 <div id="carrito" class="carrito" hidden></div>
+<main id="grupo" hidden>
+  <p class="foot" id="grupoEstado">Cargando…</p>
+  <div id="listaMensajes"></div>
+</main>
 <main id="sonadoras" hidden>
   <p class="foot" id="sonEstado">Buscando soñadoras…</p>
   <div id="listaSonadoras"></div>
@@ -881,10 +892,12 @@ function cambiarVista(cual){
   document.getElementById('app').hidden = cual !== 'apuestas';
   document.getElementById('armar').hidden = cual !== 'armar';
   document.getElementById('sonadoras').hidden = cual !== 'sonadoras';
+  document.getElementById('grupo').hidden = cual !== 'grupo';
   document.getElementById('foot').hidden = cual !== 'apuestas';
   document.getElementById('carrito').hidden = cual !== 'armar' || _seleccion.size === 0;
   if (cual === 'armar') cargarPicks();
   if (cual === 'sonadoras') cargarSonadoras();
+  if (cual === 'grupo') cargarMensajes();
 }
 
 async function cargarPicks(){
@@ -1158,6 +1171,39 @@ async function editarCuota(id, actual){
     await cargar();
   } catch (e) {
     alert('No pude guardar la cuota: ' + e.message);
+  }
+}
+
+// --- Mensajes del grupo ----------------------------------------------
+async function cargarMensajes(){
+  const estado = document.getElementById('grupoEstado');
+  estado.hidden = false;
+  estado.textContent = 'Buscando mensajes…';
+
+  try {
+    const r = await fetch(`/api/mensajes?k=${encodeURIComponent(KEY)}`, {cache:'no-store'});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'error');
+
+    if (!(d.mensajes || []).length) {
+      estado.innerHTML = 'Todavía no llegó ningún mensaje.<br><br>'
+        + 'Reenviale uno al bot desde Telegram para probar, '
+        + 'o agregá el bot como administrador de un canal donde se publiquen.';
+      return;
+    }
+    estado.hidden = true;
+
+    document.getElementById('listaMensajes').innerHTML = d.mensajes.map(m => `
+      <div class="msg">
+        <div class="msg__head">
+          <b>${esc(m.origen || '?')}</b>
+          ${m.autor ? `<span>${esc(m.autor)}</span>` : ''}
+          <i>${esc((m.recibido_en || '').slice(5, 16).replace('T', ' '))}</i>
+        </div>
+        <div class="msg__txt">${esc(m.texto)}</div>
+      </div>`).join('');
+  } catch (e) {
+    estado.textContent = 'No pude traerlos: ' + e.message;
   }
 }
 
