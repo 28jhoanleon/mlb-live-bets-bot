@@ -23,6 +23,13 @@ class Settings:
     odds_provider: str = os.getenv("ODDS_PROVIDER", "the_odds_api")
     odds_api_key: str = os.getenv("ODDS_API_KEY", "")
     parlay_api_key: str = os.getenv("PARLAY_API_KEY", "")
+
+    # Lector del grupo de picks (opcional). Sin estas variables el
+    # lector no arranca y todo lo demás funciona igual.
+    telegram_api_id: str = os.getenv("TELEGRAM_API_ID", "")
+    telegram_api_hash: str = os.getenv("TELEGRAM_API_HASH", "")
+    telegram_session: str = os.getenv("TELEGRAM_SESSION", "")
+    telegram_grupo: str = os.getenv("TELEGRAM_GRUPO", "")
     # Casas donde el usuario realmente juega. Se usan para PRIORIZAR qué
     # apuestas mostrar, no para calcular la probabilidad justa: esa se
     # sigue calculando con todas las casas disponibles, porque un

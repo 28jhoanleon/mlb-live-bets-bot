@@ -44,10 +44,17 @@ async def main() -> None:
     servidor = uvicorn.Server(config)
     log.info("Web escuchando en el puerto %s", puerto)
 
+    # Lector del grupo de picks, como tarea de fondo. Si no está
+    # configurado, la tarea termina sola sin hacer nada.
+    from app.lector.cliente import escuchar
+
+    tarea_lector = asyncio.create_task(escuchar())
+
     try:
         await servidor.serve()
     finally:
         log.info("Cerrando...")
+        tarea_lector.cancel()
         await bot_app.updater.stop()
         await bot_app.stop()
         await bot_app.shutdown()
