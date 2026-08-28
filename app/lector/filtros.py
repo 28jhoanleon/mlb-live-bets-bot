@@ -17,16 +17,35 @@ def _lista(crudo: str | None) -> list[str]:
 
 
 def autor_permitido(autor: str | None, permitidos: str | None) -> bool:
-    """Sin lista de autores, pasa cualquiera. Con lista, solo esos."""
+    """Sin lista de autores, pasa cualquiera. Con lista, solo esos.
+
+    OJO: coincidencia parcial, para tolerar apellidos o emojis pegados
+    al nombre en Telegram ("Ludo Gallina 🐔" contra "Ludo"). El costo es
+    que un nombre CORTO puede matchear por accidente -- alguien que se
+    llama "C" o "Le" es subcadena de "Cara Roja" o "leandro". Por eso
+    esto es un respaldo: para fuentes creadas por reacción, `pasa()` usa
+    el id numérico primero, que no tiene ambigüedad. Esto solo decide
+    cuando no hay id (fuentes configuradas a mano con `/fuentes autor:`).
+    """
     lista = _lista(permitidos)
     if not lista:
         return True
     if not autor:
         return False
     bajo = autor.lower()
-    # Coincidencia parcial: en Telegram el nombre puede venir con emojis
-    # o apellido, y pedir igualdad exacta fallaría casi siempre.
     return any(p in bajo or bajo in p for p in lista)
+
+
+def autor_id_permitido(autor_id: int | None, ids_permitidos: str | None) -> bool:
+    """Igual que autor_permitido pero por id numérico de Telegram, que
+    es exacto: dos personas nunca comparten id, a diferencia del nombre.
+    """
+    ids = _lista(ids_permitidos)
+    if not ids:
+        return True
+    if autor_id is None:
+        return False
+    return str(autor_id) in ids
 
 
 def tiene_palabra(texto: str, palabras: str | None) -> bool:
@@ -72,9 +91,17 @@ def tiene_casa(texto: str, casas: str | None) -> bool:
     return False
 
 
-def pasa(fuente: dict, texto: str, autor: str | None, con_foto: bool) -> bool:
+def pasa(fuente: dict, texto: str, autor: str | None, con_foto: bool,
+         autor_id: int | None = None) -> bool:
     """¿Este mensaje cumple lo que pide la fuente?"""
-    if not autor_permitido(autor, fuente.get("autores")):
+    if fuente.get("autor_ids"):
+        # Hay ids guardados (fuente creada por reacción): mandan ellos,
+        # exactos, y NO se cae al nombre aunque el id no matchee -- si
+        # se usara el nombre como respaldo acá, quedaría la misma
+        # ambigüedad que esto vino a resolver.
+        if not autor_id_permitido(autor_id, fuente["autor_ids"]):
+            return False
+    elif not autor_permitido(autor, fuente.get("autores")):
         return False
 
     if fuente.get("solo_apuestas"):

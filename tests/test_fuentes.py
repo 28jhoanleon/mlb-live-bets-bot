@@ -255,3 +255,70 @@ class TestAgregarAutorAFuente:
 
     def test_fuente_inexistente_no_rompe(self, db):
         db.agregar_autor_a_fuente("no_existe", "Juan")  # no debe lanzar
+
+
+class TestFiltroPorId:
+    """Bug real, reportado con captura: alguien que se llama "C" pasaba
+    el filtro de una fuente que seguía a "Cara Roja" y "leandro",
+    porque "c" es subcadena de "cara roja". El nombre es ambiguo; el id
+    de Telegram no. Las fuentes creadas por reacción ahora filtran por
+    id, y el nombre solo queda como respaldo para las configuradas a
+    mano con /fuentes."""
+
+    def test_c_ya_no_cuela_como_cara_roja(self):
+        from app.lector.filtros import pasa
+
+        fuente = {"autores": "Cara Roja,leandro", "autor_ids": "111,222",
+                  "solo_apuestas": 1}
+        assert not pasa(fuente, "pick de otro", "C", True, autor_id=999)
+
+    def test_la_persona_real_si_pasa(self):
+        from app.lector.filtros import pasa
+
+        fuente = {"autores": "Cara Roja,leandro", "autor_ids": "111,222",
+                  "solo_apuestas": 1}
+        assert pasa(fuente, "pick", "Cara Roja", True, autor_id=111)
+
+    def test_reconoce_aunque_cambie_de_nombre(self):
+        """El id no cambia aunque la persona cambie su nombre de
+        Telegram; el filtro por nombre sí se rompería."""
+        from app.lector.filtros import pasa
+
+        fuente = {"autores": "Cara Roja,leandro", "autor_ids": "111,222",
+                  "solo_apuestas": 1}
+        assert pasa(fuente, "pick", "Nombre Nuevo Random", True, autor_id=111)
+
+    def test_sin_ids_cae_al_nombre_como_antes(self):
+        """Fuentes configuradas a mano con /fuentes autor: no tienen
+        id -- ahí sigue valiendo el nombre, es lo único que hay."""
+        from app.lector.filtros import pasa
+
+        fuente = {"autores": "Ludo", "autor_ids": ""}
+        assert pasa(fuente, "pick", "Ludo Gallina", False)
+
+    def test_autor_id_permitido_exacto(self):
+        from app.lector.filtros import autor_id_permitido
+
+        assert autor_id_permitido(111, "111,222")
+        assert not autor_id_permitido(999, "111,222")
+        assert not autor_id_permitido(None, "111,222")
+
+    def test_sin_ids_configurados_pasa_cualquiera(self):
+        from app.lector.filtros import autor_id_permitido
+
+        assert autor_id_permitido(123, "")
+        assert autor_id_permitido(None, "")
+
+
+class TestAgregarAutorConId:
+    def test_guarda_nombre_e_id(self, db):
+        db.agregar_fuente("MLB", "grupo1", autores="Tole", autor_ids="")
+        db.agregar_autor_a_fuente("grupo1", "Ludo", autor_id=555)
+        f = db.listar_fuentes()[0]
+        assert f["autores"] == "Tole,Ludo"
+        assert f["autor_ids"] == "555"
+
+    def test_no_duplica_el_id(self, db):
+        db.agregar_fuente("MLB", "grupo1", autor_ids="555")
+        db.agregar_autor_a_fuente("grupo1", "Ludo", autor_id=555)
+        assert db.listar_fuentes()[0]["autor_ids"] == "555"

@@ -162,7 +162,11 @@ def _migrar_columnas_nuevas() -> None:
     """
     columnas_por_tabla = {
         "mensajes_grupo": [("foto", "TEXT")],
-        "fuentes": [("casas", "TEXT"), ("solo_apuestas", "INTEGER DEFAULT 0")],
+        "fuentes": [
+            ("casas", "TEXT"),
+            ("solo_apuestas", "INTEGER DEFAULT 0"),
+            ("autor_ids", "TEXT"),  # IDs de Telegram, no nombres -- ver nota abajo
+        ],
     }
     with _connection() as conn:
         for tabla, columnas in columnas_por_tabla.items():
@@ -684,40 +688,54 @@ def leer_mensajes_grupo(limite: int = 50) -> list[dict[str, Any]]:
 def agregar_fuente(
     nombre: str, grupo: str, autores: str = "", requiere_foto: bool = False,
     requiere_link: bool = False, palabras: str = "", casas: str = "",
-    solo_apuestas: bool = False,
+    solo_apuestas: bool = False, autor_ids: str = "",
 ) -> None:
     with _connection() as conn:
         conn.execute(
             "INSERT INTO fuentes (nombre, grupo, autores, requiere_foto, "
-            "requiere_link, palabras, casas, solo_apuestas) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+            "requiere_link, palabras, casas, solo_apuestas, autor_ids) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(grupo) DO UPDATE SET nombre=excluded.nombre, "
             "autores=excluded.autores, requiere_foto=excluded.requiere_foto, "
             "requiere_link=excluded.requiere_link, palabras=excluded.palabras, "
-            "casas=excluded.casas, solo_apuestas=excluded.solo_apuestas, activa=1",
+            "casas=excluded.casas, solo_apuestas=excluded.solo_apuestas, "
+            "autor_ids=excluded.autor_ids, activa=1",
             (nombre, grupo.strip().lstrip("@"), autores, int(requiere_foto),
-             int(requiere_link), palabras, casas, int(solo_apuestas)),
+             int(requiere_link), palabras, casas, int(solo_apuestas), autor_ids),
         )
 
 
-def agregar_autor_a_fuente(grupo: str, autor: str) -> None:
-    """Suma un autor a la lista de una fuente ya seguida, sin duplicar
-    ni pisar los que ya estaban. Se usa cuando reaccionás a alguien de
-    un grupo que ya seguís: de ahí en más también se le sigue a él."""
+def agregar_autor_a_fuente(grupo: str, autor: str, autor_id: int | None = None) -> None:
+    """Suma un autor (nombre Y, si se tiene, id numérico) a una fuente ya
+    seguida, sin duplicar ni pisar los que ya estaban.
+
+    El id es lo que de verdad distingue a una persona -- el nombre es
+    solo para mostrarlo en el panel. Comparar por nombre es ambiguo: en
+    un grupo de miles de personas, alguien que se llama "C" o "Le" es
+    una subcadena de "Cara Roja" o "leandro", así que un filtro por
+    texto lo dejaría pasar sin querer. El id de Telegram no tiene ese
+    problema: es único por persona.
+    """
     grupo = grupo.strip().lstrip("@")
     with _connection() as conn:
         fila = conn.execute(
-            "SELECT autores FROM fuentes WHERE grupo = ?", (grupo,)
+            "SELECT autores, autor_ids FROM fuentes WHERE grupo = ?", (grupo,)
         ).fetchone()
         if fila is None:
             return
+
         actuales = [a.strip() for a in (fila["autores"] or "").split(",") if a.strip()]
         if autor and autor.lower() not in (a.lower() for a in actuales):
             actuales.append(autor)
-            conn.execute(
-                "UPDATE fuentes SET autores = ? WHERE grupo = ?",
-                (",".join(actuales), grupo),
-            )
+
+        ids_actuales = [i.strip() for i in (fila["autor_ids"] or "").split(",") if i.strip()]
+        if autor_id is not None and str(autor_id) not in ids_actuales:
+            ids_actuales.append(str(autor_id))
+
+        conn.execute(
+            "UPDATE fuentes SET autores = ?, autor_ids = ? WHERE grupo = ?",
+            (",".join(actuales), ",".join(ids_actuales), grupo),
+        )
 
 
 def listar_fuentes(solo_activas: bool = True) -> list[dict[str, Any]]:

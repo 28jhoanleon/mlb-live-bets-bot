@@ -223,9 +223,11 @@ async def escuchar() -> None:
                 return
 
             autor = None
+            autor_id = None
             try:
                 remitente = await mensaje.get_sender()
                 autor = getattr(remitente, "first_name", None)
+                autor_id = getattr(remitente, "id", None)
             except Exception:
                 pass
 
@@ -236,18 +238,22 @@ async def escuchar() -> None:
             # Reaccionar significa "seguí a esta persona de acá en más":
             # de este grupo, sus mensajes con foto o link (los que
             # parecen apuesta) se guardan solos, sin reaccionar de nuevo
-            # cada vez.
+            # cada vez. Se guarda por ID, no por nombre -- el nombre es
+            # ambiguo (dos personas pueden llamarse "Leandro"), el id no.
             handle = getattr(chat, "username", None) or str(getattr(chat, "id", ""))
             if fuente is None:
                 nombre = getattr(chat, "title", None) or handle
+                ids = str(autor_id) if autor_id is not None else ""
                 await asyncio.to_thread(
                     agregar_fuente, nombre, handle, autor or "", False, False,
-                    "", "", True,
+                    "", "", True, ids,
                 )
                 origen = nombre
             else:
                 if autor:
-                    await asyncio.to_thread(agregar_autor_a_fuente, fuente["grupo"], autor)
+                    await asyncio.to_thread(
+                        agregar_autor_a_fuente, fuente["grupo"], autor, autor_id,
+                    )
                 origen = fuente["nombre"]
 
             foto = await _descargar_si_hay(cliente, mensaje) if con_foto else None
@@ -280,14 +286,16 @@ async def escuchar() -> None:
                 return
 
             autor = None
+            autor_id = None
             try:
                 remitente = await evento.get_sender()
                 autor = getattr(remitente, "first_name", None)
+                autor_id = getattr(remitente, "id", None)
             except Exception:
                 pass
 
             con_foto = bool(getattr(evento.message, "photo", None))
-            if not pasa(fuente, texto, autor, con_foto):
+            if not pasa(fuente, texto, autor, con_foto, autor_id):
                 return
 
             foto = await _descargar_si_hay(cliente, evento.message) if con_foto else None
