@@ -146,7 +146,34 @@ def init_db() -> None:
             );
             """
         )
+    _migrar_columnas_nuevas()
     log.info("Base de datos inicializada en %s", _db_path())
+
+
+def _migrar_columnas_nuevas() -> None:
+    """Agrega columnas nuevas a tablas que ya existían.
+
+    `CREATE TABLE IF NOT EXISTS` no toca una tabla que ya existe: si
+    alguien tenía `mensajes_grupo` o `fuentes` de una versión anterior,
+    las columnas agregadas después (foto, casas) nunca se sumaban. La
+    tabla quedaba desactualizada en silencio, y el primer INSERT o
+    SELECT que las mencionara rompía con "no such column" -- que es
+    justo el error "No pude leerlos" que se vio en la web.
+    """
+    columnas_por_tabla = {
+        "mensajes_grupo": [("foto", "TEXT")],
+        "fuentes": [("casas", "TEXT")],
+    }
+    with _connection() as conn:
+        for tabla, columnas in columnas_por_tabla.items():
+            existentes = {
+                fila["name"]
+                for fila in conn.execute(f"PRAGMA table_info({tabla})").fetchall()
+            }
+            for columna, tipo in columnas:
+                if columna not in existentes:
+                    conn.execute(f"ALTER TABLE {tabla} ADD COLUMN {columna} {tipo}")
+                    log.info("Migración: agregada columna %s.%s", tabla, columna)
 
 
 # ---------- active_bets (para /refresh) ----------
