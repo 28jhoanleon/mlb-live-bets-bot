@@ -54,7 +54,30 @@ def configurado() -> bool:
     )
 
 
-async def _mi_reaccion(cliente, update, yo_id: int, GetMessageReactionsListRequest) -> str | None:
+def _texto_con_links(mensaje) -> str:
+    """El texto visible, más cualquier link que venga ESCONDIDO detrás
+    de una palabra corta.
+
+    Telegram permite que un texto como "x20" lleve una URL invisible
+    atrás (como un link de HTML). `mensaje.message` solo trae el texto
+    que se ve -- la URL real no está ahí en ningún lado. Sin esto, un
+    cupón compartido así ("x20" con el link del cupón escondido detrás)
+    se guardaba sin el link: no se veía, no era clickeable, y tampoco
+    lo detectaban los filtros de casa/link (que buscan el dominio en el
+    texto y ahí no estaba)."""
+    texto = (mensaje.message or "").strip()
+    entidades = getattr(mensaje, "entities", None) or []
+    ocultas = []
+    for e in entidades:
+        url = getattr(e, "url", None)  # solo lo tienen los links con texto propio
+        if url and url not in texto and url not in ocultas:
+            ocultas.append(url)
+    if ocultas:
+        texto = (texto + "\n" + "\n".join(ocultas)).strip()
+    return texto
+
+
+async def _mi_reaccion(cliente, update, yo_id: int, GetMessageReactionsListRequest, BroadcastForbiddenError) -> str | None:
     """Qué emoji puse yo en este mensaje, si puse alguno.
 
     En grupos grandes (miles de miembros, como el de MLB) Telegram
@@ -95,6 +118,18 @@ async def _mi_reaccion(cliente, update, yo_id: int, GetMessageReactionsListReque
         resultado = await cliente(GetMessageReactionsListRequest(
             peer=peer_resuelto, id=update.msg_id, limit=100,
         ))
+    except BroadcastForbiddenError:
+        # Esto es un CANAL de difusión, no un grupo -- Telegram no deja
+        # pedir quién reaccionó ahí, ni siquiera siendo miembro. No es
+        # un bug de acá, es una restricción real de la plataforma:
+        # reaccionar para seguir a alguien solo funciona en grupos.
+        log.info(
+            "Reacción en un canal (chat_id=%s): Telegram no expone quién "
+            "reacciona en canales, así que esto no se puede resolver. Para "
+            "canales, usá /fuentes add en vez de reaccionar.",
+            getattr(update.peer, "channel_id", None),
+        )
+        return None
     except Exception:
         log.exception(
             "No pude pedir la lista completa de reacciones (chat_id=%s, msg_id=%s)",
@@ -208,6 +243,7 @@ async def escuchar() -> None:
     # siempre y marcás lo que te sirve con un toque.
     #
     # Solo cuentan TUS reacciones. Que otro reaccione no guarda nada.
+    from telethon.errors import BroadcastForbiddenError
     from telethon.tl.functions.messages import GetMessageReactionsListRequest
     from telethon.tl.types import UpdateMessageReactions
 
@@ -224,7 +260,7 @@ async def escuchar() -> None:
             if yo_id is None:
                 yo_id = (await cliente.get_me()).id
 
-            emoji = await _mi_reaccion(cliente, update, yo_id, GetMessageReactionsListRequest)
+            emoji = await _mi_reaccion(cliente, update, yo_id, GetMessageReactionsListRequest, BroadcastForbiddenError)
             if emoji is None:
                 log.debug("Reacción recibida pero no pude identificar cuál puse yo")
                 return
@@ -236,7 +272,7 @@ async def escuchar() -> None:
             if mensaje is None:
                 return
 
-            texto = (mensaje.message or "").strip()
+            texto = _texto_con_links(mensaje)
             con_foto = bool(getattr(mensaje, "photo", None))
             if not texto and not con_foto:
                 return
@@ -300,7 +336,7 @@ async def escuchar() -> None:
             if fuente is None:
                 return  # cualquier otro chat: ni se toca
 
-            texto = (evento.message.message or "").strip()
+            texto = _texto_con_links(evento.message)
             if not texto:
                 return
 

@@ -161,6 +161,86 @@ class TestSegundoIntentoDeResolverElPeer:
         tienen que estar ahí para poder ubicar el caso."""
         fuente = pathlib.Path("app/lector/cliente.py").read_text()
         i = fuente.index("async def _mi_reaccion")
-        bloque = fuente[i:i + 2500]
+        bloque = fuente[i:i + 3500]
         assert "chat_id=" in bloque
         assert "msg_id=" in bloque
+
+
+class TestLinksEscondidosDetrasDeTexto:
+    """Bug real, confirmado con un mensaje "x20" que tenía un cupón
+    linkeado detrás del texto corto. Telegram permite que una palabra
+    lleve una URL invisible atrás; `mensaje.message` (el texto plano)
+    no la incluye en ningún lado. Sin extraerla de las entidades, el
+    link no se guardaba, no se veía, y tampoco lo detectaban los
+    filtros de casa/link."""
+
+    def _mensaje(self, texto, entidades=None):
+        import types
+
+        return types.SimpleNamespace(message=texto, entities=entidades or [])
+
+    def test_agrega_la_url_escondida_al_texto(self):
+        import types
+
+        from app.lector.cliente import _texto_con_links
+
+        entidad = types.SimpleNamespace(url="https://pba.stake.bet.ar/x")
+        mensaje = self._mensaje("x20", [entidad])
+        resultado = _texto_con_links(mensaje)
+        assert "x20" in resultado
+        assert "https://pba.stake.bet.ar/x" in resultado
+
+    def test_no_duplica_si_la_url_ya_estaba_visible(self):
+        import types
+
+        from app.lector.cliente import _texto_con_links
+
+        entidad = types.SimpleNamespace(url="https://x.com/y")
+        mensaje = self._mensaje("mirá https://x.com/y", [entidad])
+        resultado = _texto_con_links(mensaje)
+        assert resultado.count("https://x.com/y") == 1
+
+    def test_sin_entidades_no_rompe(self):
+        from app.lector.cliente import _texto_con_links
+
+        assert _texto_con_links(self._mensaje("texto normal")) == "texto normal"
+
+    def test_entidades_sin_url_no_rompen(self):
+        """Negrita, cursiva, etc. son entidades sin .url -- no deben
+        romper ni agregar nada."""
+        import types
+
+        from app.lector.cliente import _texto_con_links
+
+        entidad = types.SimpleNamespace()  # sin atributo url
+        assert _texto_con_links(self._mensaje("*texto*", [entidad])) == "*texto*"
+
+    def test_el_filtro_de_casa_ahora_encuentra_el_link_escondido(self):
+        import types
+
+        from app.lector.cliente import _texto_con_links
+        from app.lector.filtros import tiene_casa
+
+        entidad = types.SimpleNamespace(url="https://pba.stake.bet.ar/x")
+        texto = _texto_con_links(self._mensaje("x20", [entidad]))
+        assert tiene_casa(texto, "stake")
+
+
+class TestCanalDeDifusion:
+    """Reportado con un log real: reaccionar en un CANAL (no un grupo)
+    tira BroadcastForbiddenError -- Telegram no deja pedir quién
+    reaccionó ahí ni siendo miembro. Es una restricción de la
+    plataforma, no un bug: hay que reconocerla y no tratarla como
+    cualquier otro error."""
+
+    def test_reconoce_el_error_especifico_de_canal(self):
+        fuente = pathlib.Path("app/lector/cliente.py").read_text()
+        assert "BroadcastForbiddenError" in fuente
+
+    def test_no_lo_trata_como_error_generico(self):
+        """Tiene que tener su propio except, antes del genérico, para
+        no generar un traceback como si fuera un bug."""
+        fuente = pathlib.Path("app/lector/cliente.py").read_text()
+        i = fuente.index("except BroadcastForbiddenError:")
+        j = fuente.index("except Exception:", i)
+        assert i < j  # el específico va ANTES que el genérico
