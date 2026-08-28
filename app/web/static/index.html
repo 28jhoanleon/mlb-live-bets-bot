@@ -239,6 +239,25 @@ body{
 .ftag i:hover{opacity:1;color:var(--clay)}
 .msg__head .quitar{margin-left:6px;font-size:15px}
 .msg{margin:0 14px 10px;padding:11px 13px;border:1px solid var(--line);border-radius:var(--r)}
+.panel-fuentes{margin:0 14px 14px;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.panel-fuentes__head{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:11px 13px;cursor:pointer;font-size:13px;
+}
+.panel-fuentes__lista{border-top:1px solid var(--line)}
+.fuente-row{
+  display:flex;justify-content:space-between;align-items:center;gap:10px;
+  padding:10px 13px;border-bottom:1px solid var(--line);
+}
+.fuente-row:last-child{border-bottom:none}
+.fuente-row__info{display:flex;flex-direction:column;gap:2px;min-width:0}
+.fuente-row__info b{font-size:13px}
+.fuente-row__grupo{font-size:11px;color:var(--muted)}
+.fuente-row__filtros{font-size:11px;color:var(--muted);opacity:.8}
+.fuente-row__quitar{
+  flex-shrink:0;background:none;border:1px solid var(--line);color:var(--clay,#f88);
+  font-size:11px;padding:6px 10px;border-radius:20px;cursor:pointer;font-family:inherit;
+}
 .msg__foto{display:block;max-width:100%;border-radius:8px;margin:2px 0 8px;cursor:zoom-in}
 .msg__txt a{color:var(--acc,#7dd3fc);word-break:break-all}
 .msg__head{display:flex;gap:8px;align-items:baseline;font-size:11.5px;margin-bottom:6px;flex-wrap:wrap}
@@ -569,6 +588,7 @@ body{
 </main>
 <div id="carrito" class="carrito" hidden></div>
 <main id="grupo" hidden>
+  <div id="panelFuentes"></div>
   <p class="foot" id="grupoEstado">Cargando…</p>
   <div id="listaMensajes"></div>
 </main>
@@ -1190,37 +1210,36 @@ async function editarCuota(id, actual){
 
 // --- Mensajes del grupo ----------------------------------------------
 async function cargarMensajes(){
+  renderPanelFuentes();  // independiente: se ve aunque no haya mensajes
+
   const estado = document.getElementById('grupoEstado');
   estado.hidden = false;
   estado.textContent = 'Buscando mensajes…';
 
   try {
-    const [r, rf] = await Promise.all([
-      fetch(`/api/mensajes?k=${encodeURIComponent(KEY)}`, {cache:'no-store'}),
-      fetch(`/api/fuentes?k=${encodeURIComponent(KEY)}`, {cache:'no-store'}),
-    ]);
+    const r = await fetch(`/api/mensajes?k=${encodeURIComponent(KEY)}`, {cache:'no-store'});
     const d = await r.json();
-    try { _fuentes = (await rf.json()).fuentes || []; } catch (e) { _fuentes = []; }
     if (!r.ok) throw new Error(d.detail || 'error');
 
     if (!(d.mensajes || []).length) {
       estado.innerHTML = 'Todavía no llegó ningún mensaje.<br><br>'
-        + 'Reenviale uno al bot desde Telegram para probar, '
-        + 'o agregá el bot como administrador de un canal donde se publiquen.';
+        + (_fuentes.length
+            ? 'Reaccioná (⭐ 🔥 ✅ 👍) a un mensaje de alguien para empezar a seguirlo.'
+            : 'Reenviale uno al bot desde Telegram para probar, o usá <code>/fuentes add</code>.');
+      document.getElementById('listaMensajes').innerHTML = '';
       return;
     }
     estado.hidden = true;
 
     // Selector de fuente: con varios grupos seguidos, una lista sola
-    // vuelve a ser un chat entero.
+    // vuelve a ser un chat entero. El botón de dejar de seguir vive en
+    // el panel de arriba, acá solo se filtra.
     const origenes = [...new Set(d.mensajes.map(m => m.origen).filter(Boolean))];
     const filtro = origenes.length > 1
       ? `<div class="fuentes">
            <button class="ftag activa" onclick="filtrarFuente(null,this)">Todas</button>
            ${origenes.map(o =>
-             `<button class="ftag" onclick="filtrarFuente('${esc(o)}',this)">${esc(o)}
-                <i onclick="event.stopPropagation();dejarFuente('${esc(o)}')">×</i>
-              </button>`
+             `<button class="ftag" onclick="filtrarFuente('${esc(o)}',this)">${esc(o)}</button>`
            ).join('')}
          </div>`
       : '';
@@ -1240,8 +1259,77 @@ async function cargarMensajes(){
         <div class="msg__txt">${enlazar(esc(m.texto))}</div>
       </div>`).join('');
   } catch (e) {
-    estado.textContent = 'No pude traerlos: ' + e.message;
+    estado.textContent = 'No pude traer los mensajes: ' + e.message;
   }
+}
+
+// Panel de administración: qué fuentes seguís, con qué filtros, y
+// botón para dejar de seguir cada una. Siempre visible, independiente
+// de si ya llegaron mensajes -- antes esto vivía mezclado con los
+// filtros de la lista de mensajes y solo aparecía si había más de una
+// fuente CON mensajes propios: recién seguida una fuente, no se veía
+// en ningún lado hasta que algo le llegara.
+async function renderPanelFuentes(){
+  const panel = document.getElementById('panelFuentes');
+  panel.innerHTML = '<p class="foot">Cargando fuentes…</p>';
+
+  try {
+    const r = await fetch(`/api/fuentes?k=${encodeURIComponent(KEY)}`, {cache:'no-store'});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'error');
+    _fuentes = d.fuentes || [];
+  } catch (e) {
+    panel.innerHTML = `<p class="foot">No pude traer las fuentes: ${esc(e.message)}</p>`;
+    return;
+  }
+
+  if (!_fuentes.length) {
+    panel.innerHTML = `<p class="foot">
+      No estás siguiendo ninguna fuente todavía. Reaccioná a un mensaje
+      con ⭐ 🔥 ✅ 👍, o usá <code>/fuentes add</code> en Telegram.
+    </p>`;
+    return;
+  }
+
+  panel.innerHTML = `
+    <div class="panel-fuentes">
+      <div class="panel-fuentes__head" onclick="toggleFuentes()">
+        <b>Siguiendo (${_fuentes.length})</b>
+        <span id="flechaFuentes">▾</span>
+      </div>
+      <div id="listaFuentes" class="panel-fuentes__lista">
+        ${_fuentes.map(f => `
+          <div class="fuente-row">
+            <div class="fuente-row__info">
+              <b>${esc(f.nombre)}</b>
+              <span class="fuente-row__grupo">@${esc(f.grupo)}</span>
+              <span class="fuente-row__filtros">${esc(_describirFiltros(f))}</span>
+            </div>
+            <button class="fuente-row__quitar" onclick="dejarFuente('${esc(f.nombre)}')">
+              Dejar de seguir
+            </button>
+          </div>`).join('')}
+      </div>
+    </div>`;
+}
+
+function _describirFiltros(f){
+  const partes = [];
+  if (f.autores) partes.push(`autor: ${f.autores}`);
+  if (f.solo_apuestas) partes.push('foto o link (auto)');
+  if (f.requiere_foto) partes.push('con foto');
+  if (f.requiere_link) partes.push('con link');
+  if (f.palabras) partes.push(`palabras: ${f.palabras}`);
+  if (f.casas) partes.push(`casas: ${f.casas}`);
+  return partes.join(' · ') || 'sin filtros (todo)';
+}
+
+function toggleFuentes(){
+  const lista = document.getElementById('listaFuentes');
+  const flecha = document.getElementById('flechaFuentes');
+  const colapsado = lista.style.display === 'none';
+  lista.style.display = colapsado ? '' : 'none';
+  flecha.textContent = colapsado ? '▾' : '▸';
 }
 
 // Convierte URLs sueltas en el texto en links clickeables. Se hace
