@@ -76,12 +76,31 @@ async def _mi_reaccion(cliente, update, yo_id: int, GetMessageReactionsListReque
         # este paso la consulta tira una excepción, se cae al except de
         # abajo, y la reacción queda sin efecto en silencio -- daba la
         # sensación de que "no pasaba nada" al reaccionar.
-        peer_resuelto = await cliente.get_input_entity(update.peer)
+        #
+        # get_input_entity() solo mira la caché local de la sesión. Si
+        # el chat en cuestión todavía no pasó por esa caché (por
+        # ejemplo, un grupo donde la sesión no tuvo actividad reciente),
+        # falla aunque la cuenta SÍ sea miembro. get_entity() es más
+        # lento pero además consulta a Telegram si hace falta, así que
+        # sirve de segundo intento antes de rendirse. Esto explicaría
+        # que funcione en un grupo (ya en caché) y no en otro (todavía
+        # no visto por esta sesión).
+        try:
+            peer_resuelto = await cliente.get_input_entity(update.peer)
+        except Exception:
+            log.info("Peer no estaba en caché, pruebo resolverlo contra la API")
+            entidad = await cliente.get_entity(update.peer)
+            peer_resuelto = await cliente.get_input_entity(entidad)
+
         resultado = await cliente(GetMessageReactionsListRequest(
             peer=peer_resuelto, id=update.msg_id, limit=100,
         ))
     except Exception:
-        log.exception("No pude pedir la lista completa de reacciones")
+        log.exception(
+            "No pude pedir la lista completa de reacciones (chat_id=%s, msg_id=%s)",
+            getattr(update.peer, "channel_id", None) or getattr(update.peer, "chat_id", None),
+            update.msg_id,
+        )
         return None
 
     for r in getattr(resultado, "reactions", []):

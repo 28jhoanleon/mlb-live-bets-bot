@@ -140,3 +140,27 @@ class TestBugsRealesDeReacciones:
         from app.lector.cliente import _normalizar_emoji
 
         assert _normalizar_emoji(None) is None
+
+
+class TestSegundoIntentoDeResolverElPeer:
+    """Reportado: reaccionar funcionaba en un grupo y en otros no.
+    get_input_entity() solo mira la caché local de la sesión; si el
+    chat todavía no pasó por ahí, falla aunque la cuenta sea miembro.
+    get_entity() consulta a Telegram si hace falta -- segundo intento
+    antes de rendirse."""
+
+    def test_hay_un_segundo_intento_con_get_entity(self):
+        fuente = pathlib.Path("app/lector/cliente.py").read_text()
+        i = fuente.index("async def _mi_reaccion")
+        bloque = fuente[i:i + 2500]
+        assert "get_input_entity(update.peer)" in bloque
+        assert "get_entity(update.peer)" in bloque
+
+    def test_el_log_de_error_incluye_datos_para_diagnosticar(self):
+        """Si hay que revisar logs de Railway, el chat_id y msg_id
+        tienen que estar ahí para poder ubicar el caso."""
+        fuente = pathlib.Path("app/lector/cliente.py").read_text()
+        i = fuente.index("async def _mi_reaccion")
+        bloque = fuente[i:i + 2500]
+        assert "chat_id=" in bloque
+        assert "msg_id=" in bloque
