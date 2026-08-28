@@ -76,10 +76,20 @@ def pasa(fuente: dict, texto: str, autor: str | None, con_foto: bool) -> bool:
     """¿Este mensaje cumple lo que pide la fuente?"""
     if not autor_permitido(autor, fuente.get("autores")):
         return False
-    if fuente.get("requiere_foto") and not con_foto:
-        return False
-    if fuente.get("requiere_link") and not tiene_link(texto):
-        return False
+
+    if fuente.get("solo_apuestas"):
+        # Reaccionaste a alguien: de ahí en más se sigue lo suyo que
+        # PAREZCA apuesta -- foto o link, cualquiera de las dos alcanza.
+        # Distinto de requiere_foto/requiere_link (configurados a mano),
+        # que exigen cada condición por separado.
+        if not (con_foto or tiene_link(texto)):
+            return False
+    else:
+        if fuente.get("requiere_foto") and not con_foto:
+            return False
+        if fuente.get("requiere_link") and not tiene_link(texto):
+            return False
+
     if not tiene_palabra(texto, fuente.get("palabras")):
         return False
     if not tiene_casa(texto, fuente.get("casas")):

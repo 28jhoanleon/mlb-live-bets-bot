@@ -31,7 +31,13 @@ from __future__ import annotations
 import asyncio
 
 from app.config import settings
-from app.db.database import carpeta_fotos, guardar_mensaje_grupo, listar_fuentes
+from app.db.database import (
+    agregar_autor_a_fuente,
+    agregar_fuente,
+    carpeta_fotos,
+    guardar_mensaje_grupo,
+    listar_fuentes,
+)
 from app.lector.filtros import pasa
 from app.utils.logger import get_logger
 
@@ -198,16 +204,36 @@ async def escuchar() -> None:
             except Exception:
                 pass
 
+            chat = await mensaje.get_chat()
             fuentes = await asyncio.to_thread(listar_fuentes)
-            fuente = _fuente_de(await mensaje.get_chat(), fuentes)
-            origen = fuente["nombre"] if fuente else "marcado con reacción"
+            fuente = _fuente_de(chat, fuentes)
+
+            # Reaccionar significa "seguí a esta persona de acá en más":
+            # de este grupo, sus mensajes con foto o link (los que
+            # parecen apuesta) se guardan solos, sin reaccionar de nuevo
+            # cada vez.
+            handle = getattr(chat, "username", None) or str(getattr(chat, "id", ""))
+            if fuente is None:
+                nombre = getattr(chat, "title", None) or handle
+                await asyncio.to_thread(
+                    agregar_fuente, nombre, handle, autor or "", False, False,
+                    "", "", True,
+                )
+                origen = nombre
+            else:
+                if autor:
+                    await asyncio.to_thread(agregar_autor_a_fuente, fuente["grupo"], autor)
+                origen = fuente["nombre"]
 
             foto = await _descargar_si_hay(cliente, mensaje) if con_foto else None
 
             await asyncio.to_thread(
                 guardar_mensaje_grupo, origen, autor, texto or "(imagen)", foto
             )
-            log.info("Guardado por reacción %s desde %s", emoji, origen)
+            log.info(
+                "Guardado por reacción %s de %s en %s -- seguimiento activado",
+                emoji, autor or "?", origen,
+            )
         except Exception:
             log.exception("Error procesando una reacción")
 

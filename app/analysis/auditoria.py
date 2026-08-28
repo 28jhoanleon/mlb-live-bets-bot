@@ -202,6 +202,34 @@ def armar_mejorada(auditoria: AuditoriaTicket, picks: list) -> list:
 # siguen teniendo sentido.
 OBJETIVO_SEGURO = 85.0
 
+# Debajo de esto un porcentaje de calibración es ruido, no señal: con
+# pocas legs, "acertó 10 de 15" no distingue un modelo de 85% de uno de
+# 70%. Mismo piso que usa /calibracion, a propósito -- es la misma
+# pregunta ("¿esta muestra ya significa algo?") aplicada dos veces.
+_MUESTRA_MINIMA_PARA_AJUSTAR = 20
+
+
+def objetivo_calibrado(chat_id: int) -> float:
+    """El objetivo de /mejorar, ajustado con datos reales si ya hay
+    suficientes.
+
+    OBJETIVO_SEGURO es matemática teórica: asume que cuando el modelo
+    dice "85%" de verdad acierta 85% de las veces. La calibración mide
+    si eso es cierto. Mientras el bucket 80-89% no junte muestra, se
+    usa el teórico; en cuanto la junte, se usa el real de ESE bucket --
+    que puede ser más bajo (sobreconfianza) o más alto.
+
+    Sin este ajuste alguien tendría que acordarse de volver a mirar la
+    calibración y cambiar el número a mano. Así se activa solo.
+    """
+    from app.db.database import calibracion
+
+    piso = int(OBJETIVO_SEGURO // 10 * 10)
+    for tramo in calibracion(chat_id):
+        if tramo["tramo"] == f"{piso}-{piso + 9}%" and tramo["muestra"] >= _MUESTRA_MINIMA_PARA_AJUSTAR:
+            return tramo["real_pct"]
+    return OBJETIVO_SEGURO
+
 
 @dataclass
 class LegSegura:

@@ -16,6 +16,7 @@ from app.analysis.auditoria import (
     PROB_FLOJA,
     armar_mejorada,
     auditar_legs,
+    objetivo_calibrado,
     version_segura,
 )
 from app.analysis.daily_picks import find_daily_picks
@@ -76,15 +77,16 @@ def _fmt_tramo_seguro(t) -> str:
     )
 
 
-async def _responder_version_segura(aviso, legs_raw: list[dict]) -> None:
+async def _responder_version_segura(aviso, legs_raw: list[dict], chat_id: int) -> None:
     """Baja las líneas hasta que cada tramo sea muy probable.
 
     Es lo opuesto a una soñadora: se resigna cuota para que la
     combinada entre. Mismos jugadores y mercados, líneas más blandas.
     """
+    objetivo = objetivo_calibrado(chat_id)
     try:
         tramos, combinada = await asyncio.wait_for(
-            asyncio.to_thread(version_segura, legs_raw), timeout=120,
+            asyncio.to_thread(version_segura, legs_raw, objetivo), timeout=120,
         )
     except asyncio.TimeoutError:
         await aviso.edit_text("Tardó demasiado. Probá de nuevo en un rato.")
@@ -100,7 +102,11 @@ async def _responder_version_segura(aviso, legs_raw: list[dict]) -> None:
         )
         return
 
-    partes = [f"🛡 *Versión segura* (objetivo {OBJETIVO_SEGURO:g}% por tramo)", ""]
+    nota_calibrado = (
+        f" _(ajustado con tu calibración real, no el {OBJETIVO_SEGURO:g}% teórico)_"
+        if abs(objetivo - OBJETIVO_SEGURO) > 0.1 else ""
+    )
+    partes = [f"🛡 *Versión segura* (objetivo {objetivo:.1f}% por tramo){nota_calibrado}", ""]
 
     # Agrupado por partido: con 11 tramos de 5 juegos distintos, una
     # lista plana es ilegible.
@@ -196,7 +202,7 @@ async def mejorar_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     )
 
     if modo_seguro:
-        await _responder_version_segura(aviso, legs_raw)
+        await _responder_version_segura(aviso, legs_raw, chat_id)
         return
 
     # Techo duro: si algo se traba, el usuario recibe una respuesta igual

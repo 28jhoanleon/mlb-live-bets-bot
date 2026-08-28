@@ -162,7 +162,7 @@ def _migrar_columnas_nuevas() -> None:
     """
     columnas_por_tabla = {
         "mensajes_grupo": [("foto", "TEXT")],
-        "fuentes": [("casas", "TEXT")],
+        "fuentes": [("casas", "TEXT"), ("solo_apuestas", "INTEGER DEFAULT 0")],
     }
     with _connection() as conn:
         for tabla, columnas in columnas_por_tabla.items():
@@ -684,18 +684,40 @@ def leer_mensajes_grupo(limite: int = 50) -> list[dict[str, Any]]:
 def agregar_fuente(
     nombre: str, grupo: str, autores: str = "", requiere_foto: bool = False,
     requiere_link: bool = False, palabras: str = "", casas: str = "",
+    solo_apuestas: bool = False,
 ) -> None:
     with _connection() as conn:
         conn.execute(
             "INSERT INTO fuentes (nombre, grupo, autores, requiere_foto, "
-            "requiere_link, palabras, casas) VALUES (?, ?, ?, ?, ?, ?, ?) "
+            "requiere_link, palabras, casas, solo_apuestas) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(grupo) DO UPDATE SET nombre=excluded.nombre, "
             "autores=excluded.autores, requiere_foto=excluded.requiere_foto, "
             "requiere_link=excluded.requiere_link, palabras=excluded.palabras, "
-            "casas=excluded.casas, activa=1",
+            "casas=excluded.casas, solo_apuestas=excluded.solo_apuestas, activa=1",
             (nombre, grupo.strip().lstrip("@"), autores, int(requiere_foto),
-             int(requiere_link), palabras, casas),
+             int(requiere_link), palabras, casas, int(solo_apuestas)),
         )
+
+
+def agregar_autor_a_fuente(grupo: str, autor: str) -> None:
+    """Suma un autor a la lista de una fuente ya seguida, sin duplicar
+    ni pisar los que ya estaban. Se usa cuando reaccionás a alguien de
+    un grupo que ya seguís: de ahí en más también se le sigue a él."""
+    grupo = grupo.strip().lstrip("@")
+    with _connection() as conn:
+        fila = conn.execute(
+            "SELECT autores FROM fuentes WHERE grupo = ?", (grupo,)
+        ).fetchone()
+        if fila is None:
+            return
+        actuales = [a.strip() for a in (fila["autores"] or "").split(",") if a.strip()]
+        if autor and autor.lower() not in (a.lower() for a in actuales):
+            actuales.append(autor)
+            conn.execute(
+                "UPDATE fuentes SET autores = ? WHERE grupo = ?",
+                (",".join(actuales), grupo),
+            )
 
 
 def listar_fuentes(solo_activas: bool = True) -> list[dict[str, Any]]:

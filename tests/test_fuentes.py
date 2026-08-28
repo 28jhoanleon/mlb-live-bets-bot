@@ -192,9 +192,66 @@ class TestCapturaPorReaccion:
         assert "💩" not in _emojis_configurados()
 
     def test_funciona_aunque_el_chat_no_sea_fuente(self):
-        """Si marcás algo de otro grupo, se guarda igual: fuiste vos
-        quien lo eligió explícitamente."""
+        """Si marcás algo de un grupo que todavía no seguís, ahora SÍ
+        empieza a seguirse: reaccionar es la forma de decir "seguí a
+        esta persona de acá en más"."""
         import pathlib
 
         fuente = pathlib.Path("app/lector/cliente.py").read_text()
-        assert 'origen = fuente["nombre"] if fuente else "marcado con reacción"' in fuente
+        assert "agregar_fuente, nombre, handle, autor" in fuente
+
+
+class TestSoloApuestas:
+    """Reaccionar a alguien crea o extiende una fuente con
+    solo_apuestas=True: de ahí en más se sigue lo suyo que tenga foto O
+    link (no ambas, alguna alcanza) -- porque eso es lo que parece una
+    apuesta. Distinto de requiere_foto/requiere_link, que exigen cada
+    condición por separado y se configuran a mano."""
+
+    def _fuente(self, **kw):
+        base = {"autores": "", "requiere_foto": 0, "requiere_link": 0,
+                "palabras": "", "casas": "", "solo_apuestas": 1}
+        base.update(kw)
+        return base
+
+    def test_pasa_con_solo_foto(self):
+        from app.lector.filtros import pasa
+
+        assert pasa(self._fuente(), "mirá esto", "Ludo", True)
+
+    def test_pasa_con_solo_link(self):
+        from app.lector.filtros import pasa
+
+        assert pasa(self._fuente(), "https://pba.stake.bet.ar/x", "Ludo", False)
+
+    def test_no_pasa_sin_ninguna_de_las_dos(self):
+        """Un comentario de charla sin foto ni link no es una apuesta."""
+        from app.lector.filtros import pasa
+
+        assert not pasa(self._fuente(), "que buen partido", "Ludo", False)
+
+    def test_sigue_filtrando_por_autor(self):
+        from app.lector.filtros import pasa
+
+        f = self._fuente(autores="Ludo")
+        assert not pasa(f, "https://x.com", "Otro", False)
+
+
+class TestAgregarAutorAFuente:
+    def test_suma_un_autor_nuevo(self, db):
+        db.agregar_fuente("MLB", "grupo_mlb", autores="Tole")
+        db.agregar_autor_a_fuente("grupo_mlb", "Ludo")
+        assert db.listar_fuentes()[0]["autores"] == "Tole,Ludo"
+
+    def test_no_duplica_si_ya_estaba(self, db):
+        db.agregar_fuente("MLB", "grupo_mlb", autores="Ludo")
+        db.agregar_autor_a_fuente("grupo_mlb", "Ludo")
+        assert db.listar_fuentes()[0]["autores"] == "Ludo"
+
+    def test_no_distingue_mayusculas_para_no_duplicar(self, db):
+        db.agregar_fuente("MLB", "grupo_mlb", autores="Ludo")
+        db.agregar_autor_a_fuente("grupo_mlb", "ludo")
+        assert db.listar_fuentes()[0]["autores"] == "Ludo"
+
+    def test_fuente_inexistente_no_rompe(self, db):
+        db.agregar_autor_a_fuente("no_existe", "Juan")  # no debe lanzar
