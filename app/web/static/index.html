@@ -254,6 +254,7 @@ body{
 .fuente-row__info b{font-size:14px;line-height:1.3}
 .fuente-row__grupo{font-size:11.5px;color:var(--muted)}
 .fuente-row__filtros{font-size:11px;color:var(--muted);opacity:.75;margin-top:1px}
+.fuente-row__filtros--alerta{color:var(--clay,#f88);opacity:1;font-weight:600}
 .fuente-row__quitar{
   flex-shrink:0;background:none;border:1px solid var(--line);color:var(--clay,#f88);
   font-size:11px;padding:7px 12px;border-radius:20px;cursor:pointer;font-family:inherit;
@@ -1316,12 +1317,13 @@ async function renderPanelFuentes(){
             ? `en @${f.grupo} · por reacción ⭐`
             : `@${f.grupo}`;
           const filtros = porReaccion ? 'con foto o link' : _describirFiltros(f);
+          const sinFiltro = filtros.startsWith('⚠️');
           return `
           <div class="fuente-row">
             <div class="fuente-row__info">
               <b>${esc(titulo)}</b>
               <span class="fuente-row__grupo">${esc(subtitulo)}</span>
-              <span class="fuente-row__filtros">${esc(filtros)}</span>
+              <span class="fuente-row__filtros${sinFiltro ? ' fuente-row__filtros--alerta' : ''}">${esc(filtros)}</span>
             </div>
             <button class="fuente-row__quitar" onclick="dejarFuente('${esc(f.nombre)}')">
               Dejar de seguir
@@ -1340,7 +1342,7 @@ function _describirFiltros(f){
   if (f.requiere_link) partes.push('con link');
   if (f.palabras) partes.push(`palabras: ${f.palabras}`);
   if (f.casas) partes.push(`casas: ${f.casas}`);
-  return partes.join(' · ') || 'sin filtros (todo)';
+  return partes.length ? partes.join(' · ') : '⚠️ sin filtros — pasa TODO el grupo';
 }
 
 function toggleFuentes(){

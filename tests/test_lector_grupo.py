@@ -98,3 +98,45 @@ class TestDependencia:
 
     def test_si_falta_telethon_no_rompe_el_arranque(self):
         assert "except ImportError:" in FUENTE
+
+
+class TestBugsRealesDeReacciones:
+    """Dos causas encontradas de por qué reaccionar "no hacía nada":
+
+    1. La consulta de la lista completa de reacciones recibía el Peer
+       crudo de la actualización (solo el id), pero esa consulta exige
+       un InputPeer resuelto con access_hash. Sin resolverlo, la
+       consulta tira una excepción que quedaba tragada en silencio.
+
+    2. Telegram a veces manda el emoji con el selector de variante
+       (U+FE0F) pegado y a veces sin él. "🔥" y "🔥\ufe0f" son strings
+       distintos en Python, así que la comparación contra los emojis
+       configurados podía fallar aunque fueran el mismo emoji.
+    """
+
+    def test_resuelve_el_peer_antes_de_consultar(self):
+        fuente = pathlib.Path("app/lector/cliente.py").read_text()
+        assert "get_input_entity(update.peer)" in fuente
+        assert "peer=peer_resuelto" in fuente
+
+    def test_normaliza_el_selector_de_variante(self):
+        from app.lector.cliente import _normalizar_emoji
+
+        assert _normalizar_emoji("🔥\ufe0f") == "🔥"
+        assert _normalizar_emoji("🔥") == "🔥"
+
+    def test_los_emojis_configurados_tambien_se_normalizan(self):
+        from app.lector.cliente import _emojis_configurados
+
+        emojis = _emojis_configurados()
+        assert "\ufe0f" not in "".join(emojis)
+
+    def test_matchea_aunque_llegue_con_selector(self):
+        from app.lector.cliente import _emojis_configurados, _normalizar_emoji
+
+        assert _normalizar_emoji("👍\ufe0f") in _emojis_configurados()
+
+    def test_normalizar_con_none_no_rompe(self):
+        from app.lector.cliente import _normalizar_emoji
+
+        assert _normalizar_emoji(None) is None

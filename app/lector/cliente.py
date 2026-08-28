@@ -62,15 +62,23 @@ async def _mi_reaccion(cliente, update, yo_id: int, GetMessageReactionsListReque
     decir quién reaccionó -- `recent_reactions` llega vacío justo en
     los grupos donde esto más se usa. Por eso primero se intenta ahí
     (rápido) y si no hay nada se pide la lista completa de reacciones
-    de ESE mensaje puntual, que sí la trae siempre."""
+    de ESE mensaje puntual, que sí la trae siempre.
+    """
     reacciones = getattr(update.reactions, "recent_reactions", None) or []
     for r in reacciones:
         if getattr(getattr(r, "peer_id", None), "user_id", None) == yo_id:
-            return getattr(r.reaction, "emoticon", None)
+            return _normalizar_emoji(getattr(r.reaction, "emoticon", None))
 
     try:
+        # update.peer es un Peer "crudo" (solo el id); la consulta
+        # necesita un InputPeer resuelto, con el access_hash que
+        # Telegram exige para identificar el chat de forma segura. Sin
+        # este paso la consulta tira una excepción, se cae al except de
+        # abajo, y la reacción queda sin efecto en silencio -- daba la
+        # sensación de que "no pasaba nada" al reaccionar.
+        peer_resuelto = await cliente.get_input_entity(update.peer)
         resultado = await cliente(GetMessageReactionsListRequest(
-            peer=update.peer, id=update.msg_id, limit=100,
+            peer=peer_resuelto, id=update.msg_id, limit=100,
         ))
     except Exception:
         log.exception("No pude pedir la lista completa de reacciones")
@@ -78,8 +86,21 @@ async def _mi_reaccion(cliente, update, yo_id: int, GetMessageReactionsListReque
 
     for r in getattr(resultado, "reactions", []):
         if getattr(getattr(r, "peer_id", None), "user_id", None) == yo_id:
-            return getattr(r.reaction, "emoticon", None)
+            return _normalizar_emoji(getattr(r.reaction, "emoticon", None))
     return None
+
+
+def _normalizar_emoji(emoji: str | None) -> str | None:
+    """Saca el selector de variante (U+FE0F) si vino pegado.
+
+    Telegram a veces manda el emoji con ese carácter invisible agregado
+    y a veces sin él; sin normalizar, "🔥" y "🔥\ufe0f" son strings
+    distintos y la comparación contra los emojis configurados falla
+    aunque sean el mismo emoji a simple vista.
+    """
+    if emoji is None:
+        return None
+    return emoji.replace("\ufe0f", "")
 
 
 async def _descargar_si_hay(cliente, mensaje) -> str | None:
@@ -105,7 +126,7 @@ def _emojis_configurados() -> set[str]:
     Configurables por variable de entorno; por defecto los que uno usa
     naturalmente para señalar algo interesante."""
     crudo = (settings.telegram_emojis or "⭐,🔥,✅,👍").strip()
-    return {e.strip() for e in crudo.split(",") if e.strip()}
+    return {_normalizar_emoji(e.strip()) for e in crudo.split(",") if e.strip()}
 
 
 def _fuente_de(chat, fuentes: list[dict]) -> dict | None:
@@ -185,7 +206,11 @@ async def escuchar() -> None:
                 yo_id = (await cliente.get_me()).id
 
             emoji = await _mi_reaccion(cliente, update, yo_id, GetMessageReactionsListRequest)
-            if emoji is None or emoji not in emojis:
+            if emoji is None:
+                log.debug("Reacción recibida pero no pude identificar cuál puse yo")
+                return
+            if emoji not in emojis:
+                log.debug("Reacción %r no está en la lista configurada %s", emoji, emojis)
                 return
 
             mensaje = await cliente.get_messages(update.peer, ids=update.msg_id)
