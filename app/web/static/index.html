@@ -235,11 +235,16 @@ body{
   font-family:inherit;
 }
 .ftag.activa{color:var(--chalk);border-color:var(--muted)}
+.ftag i{font-style:normal;margin-left:5px;opacity:.5;padding:0 2px}
+.ftag i:hover{opacity:1;color:var(--clay)}
+.msg__head .quitar{margin-left:6px;font-size:15px}
 .msg{margin:0 14px 10px;padding:11px 13px;border:1px solid var(--line);border-radius:var(--r)}
+.msg__foto{display:block;max-width:100%;border-radius:8px;margin:2px 0 8px;cursor:zoom-in}
+.msg__txt a{color:var(--acc,#7dd3fc);word-break:break-all}
 .msg__head{display:flex;gap:8px;align-items:baseline;font-size:11.5px;margin-bottom:6px;flex-wrap:wrap}
 .msg__head b{font-size:12.5px}
 .msg__head span{color:var(--muted)}
-.msg__head i{color:var(--muted);font-style:normal;margin-left:auto;opacity:.7}
+.msg__head i:not(.quitar){color:var(--muted);font-style:normal;opacity:.7}
 .msg__txt{font-size:13px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
 .son{margin:0 14px 12px;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
 .son__head{
@@ -978,6 +983,8 @@ function actualizarCarrito(){
 
 // --- Soñadoras --------------------------------------------------------
 let _sonadorasCargadas = false;
+let _mensajesCargados = false;
+let _fuentes = [];
 
 async function cargarSonadoras(){
   if (_sonadorasCargadas) return;
@@ -1188,8 +1195,12 @@ async function cargarMensajes(){
   estado.textContent = 'Buscando mensajes…';
 
   try {
-    const r = await fetch(`/api/mensajes?k=${encodeURIComponent(KEY)}`, {cache:'no-store'});
+    const [r, rf] = await Promise.all([
+      fetch(`/api/mensajes?k=${encodeURIComponent(KEY)}`, {cache:'no-store'}),
+      fetch(`/api/fuentes?k=${encodeURIComponent(KEY)}`, {cache:'no-store'}),
+    ]);
     const d = await r.json();
+    try { _fuentes = (await rf.json()).fuentes || []; } catch (e) { _fuentes = []; }
     if (!r.ok) throw new Error(d.detail || 'error');
 
     if (!(d.mensajes || []).length) {
@@ -1207,23 +1218,43 @@ async function cargarMensajes(){
       ? `<div class="fuentes">
            <button class="ftag activa" onclick="filtrarFuente(null,this)">Todas</button>
            ${origenes.map(o =>
-             `<button class="ftag" onclick="filtrarFuente('${esc(o)}',this)">${esc(o)}</button>`
+             `<button class="ftag" onclick="filtrarFuente('${esc(o)}',this)">${esc(o)}
+                <i onclick="event.stopPropagation();dejarFuente('${esc(o)}')">×</i>
+              </button>`
            ).join('')}
          </div>`
       : '';
 
     document.getElementById('listaMensajes').innerHTML = filtro + d.mensajes.map(m => `
-      <div class="msg" data-origen="${esc(m.origen || '')}">
+      <div class="msg" data-origen="${esc(m.origen || '')}" data-id="${m.id}">
         <div class="msg__head">
           <b>${esc(m.origen || '?')}</b>
           ${m.autor ? `<span>${esc(m.autor)}</span>` : ''}
           <i>${esc((m.recibido_en || '').slice(5, 16).replace('T', ' '))}</i>
+          <button class="quitar" title="Borrar"
+                  onclick="borrarMensaje(${m.id}, this)">×</button>
         </div>
-        <div class="msg__txt">${esc(m.texto)}</div>
+        ${m.tiene_foto ? `<img class="msg__foto" loading="lazy"
+             src="/api/mensaje-foto?id=${m.id}&k=${encodeURIComponent(KEY)}"
+             onclick="window.open(this.src,'_blank')">` : ''}
+        <div class="msg__txt">${enlazar(esc(m.texto))}</div>
       </div>`).join('');
   } catch (e) {
     estado.textContent = 'No pude traerlos: ' + e.message;
   }
+}
+
+// Convierte URLs sueltas en el texto en links clickeables. Se hace
+// DESPUÉS de escapar el texto (esc ya corrió), así que es seguro
+// insertar el <a> acá sin abrir la puerta a HTML inyectado.
+function enlazar(textoEscapado){
+  return textoEscapado.replace(
+    /(https?:\/\/[^\s<]+|(?:www\.|t\.me\/)[^\s<]+)/g,
+    (m) => {
+      const href = m.startsWith('http') ? m : `https://${m}`;
+      return `<a href="${href}" target="_blank" rel="noopener">${m}</a>`;
+    }
+  );
 }
 
 function filtrarFuente(origen, btn){
@@ -1232,6 +1263,42 @@ function filtrarFuente(origen, btn){
   document.querySelectorAll('.msg').forEach(m => {
     m.hidden = origen !== null && m.dataset.origen !== origen;
   });
+}
+
+async function borrarMensaje(id, btn){
+  if (!confirm('¿Borrar este mensaje?')) return;
+  btn.disabled = true;
+  try {
+    const r = await fetch(
+      `/api/mensajes-accion?k=${encodeURIComponent(KEY)}&accion=mensaje&id=${id}`,
+      {cache:'no-store'});
+    if (!r.ok) throw new Error('no se pudo');
+    btn.closest('.msg').remove();
+  } catch (e) {
+    btn.disabled = false;
+    alert('No se pudo borrar.');
+  }
+}
+
+// Borra lo guardado de esa fuente y deja de seguirla. Se pide el grupo
+// aparte porque el nombre visible y el @grupo pueden diferir.
+async function dejarFuente(origen){
+  const fuente = (_fuentes || []).find(f => f.nombre === origen);
+  const grupo = fuente ? fuente.grupo : '';
+  if (!confirm(`¿Borrar los mensajes de "${origen}"`
+      + (grupo ? ` y dejar de seguir @${grupo}?` : '?'))) return;
+
+  try {
+    const r = await fetch(
+      `/api/mensajes-accion?k=${encodeURIComponent(KEY)}&accion=fuente`
+      + `&origen=${encodeURIComponent(origen)}&grupo=${encodeURIComponent(grupo)}`,
+      {cache:'no-store'});
+    if (!r.ok) throw new Error('no se pudo');
+    _mensajesCargados = false;
+    await cargarMensajes();
+  } catch (e) {
+    alert('No se pudo.');
+  }
 }
 
 function toggleTicket(el){

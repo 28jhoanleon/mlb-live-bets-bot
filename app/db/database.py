@@ -33,6 +33,16 @@ def _db_path() -> str:
     return "mlb_bets.db"
 
 
+def carpeta_fotos() -> str:
+    """Al lado de la base, para que viva en el mismo volumen persistente
+    (en Railway, /data) y no se pierda en cada deploy."""
+    import os
+
+    carpeta = os.path.join(os.path.dirname(_db_path()) or ".", "fotos_grupo")
+    os.makedirs(carpeta, exist_ok=True)
+    return carpeta
+
+
 @contextmanager
 def _connection() -> Iterator[sqlite3.Connection]:
     conn = sqlite3.connect(_db_path())
@@ -110,6 +120,7 @@ def init_db() -> None:
                 origen TEXT,
                 autor TEXT,
                 texto TEXT NOT NULL,
+                foto TEXT,             -- ruta del archivo, si vino con imagen
                 recibido_en TEXT NOT NULL,
                 UNIQUE (origen, texto)
             );
@@ -611,20 +622,26 @@ def fijar_cuota_ticket(chat_id: int, ticket_id: str, cuota: str, calcular_id) ->
     return encontrado
 
 
-def guardar_mensaje_grupo(origen: str, autor: str | None, texto: str) -> None:
-    """Guarda un mensaje llegado desde un grupo o canal de picks."""
+def guardar_mensaje_grupo(
+    origen: str, autor: str | None, texto: str, foto: str | None = None,
+) -> None:
+    """Guarda un mensaje llegado desde un grupo o canal de picks.
+
+    `foto`, si viene, es la ruta al archivo ya descargado (ver
+    app.lector.cliente) — acá solo se persiste la ruta.
+    """
     with _connection() as conn:
         conn.execute(
-            "INSERT OR IGNORE INTO mensajes_grupo (origen, autor, texto, recibido_en) "
-            "VALUES (?, ?, ?, ?)",
-            (origen, autor, texto, datetime.now(timezone.utc).isoformat()),
+            "INSERT OR IGNORE INTO mensajes_grupo (origen, autor, texto, foto, "
+            "recibido_en) VALUES (?, ?, ?, ?, ?)",
+            (origen, autor, texto, foto, datetime.now(timezone.utc).isoformat()),
         )
 
 
 def leer_mensajes_grupo(limite: int = 50) -> list[dict[str, Any]]:
     with _connection() as conn:
         filas = conn.execute(
-            "SELECT origen, autor, texto, recibido_en FROM mensajes_grupo "
+            "SELECT id, origen, autor, texto, foto, recibido_en FROM mensajes_grupo "
             "ORDER BY id DESC LIMIT ?",
             (limite,),
         ).fetchall()
@@ -668,3 +685,44 @@ def borrar_fuente(grupo: str) -> bool:
             "DELETE FROM fuentes WHERE grupo = ?", (grupo.strip().lstrip("@"),)
         )
         return cur.rowcount > 0
+
+
+def borrar_mensaje_grupo(mensaje_id: int) -> bool:
+    """Borra un mensaje puntual, y su foto en disco si tenía."""
+    with _connection() as conn:
+        fila = conn.execute(
+            "SELECT foto FROM mensajes_grupo WHERE id = ?", (mensaje_id,)
+        ).fetchone()
+        if fila is None:
+            return False
+        conn.execute("DELETE FROM mensajes_grupo WHERE id = ?", (mensaje_id,))
+
+    if fila["foto"]:
+        _borrar_archivo(fila["foto"])
+    return True
+
+
+def borrar_mensajes_de(origen: str) -> int:
+    """Borra todo lo guardado de una fuente, fotos incluidas. Devuelve
+    cuántos mensajes sacó."""
+    with _connection() as conn:
+        fotos = [
+            f["foto"] for f in conn.execute(
+                "SELECT foto FROM mensajes_grupo WHERE origen = ? AND foto IS NOT NULL",
+                (origen,),
+            ).fetchall()
+        ]
+        cur = conn.execute("DELETE FROM mensajes_grupo WHERE origen = ?", (origen,))
+
+    for foto in fotos:
+        _borrar_archivo(foto)
+    return cur.rowcount
+
+
+def _borrar_archivo(ruta: str) -> None:
+    import os
+
+    try:
+        os.remove(ruta)
+    except OSError:
+        pass

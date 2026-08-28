@@ -31,7 +31,7 @@ from __future__ import annotations
 import asyncio
 
 from app.config import settings
-from app.db.database import guardar_mensaje_grupo, listar_fuentes
+from app.db.database import carpeta_fotos, guardar_mensaje_grupo, listar_fuentes
 from app.lector.filtros import pasa
 from app.utils.logger import get_logger
 
@@ -46,6 +46,51 @@ def configurado() -> bool:
         and settings.telegram_api_hash
         and settings.telegram_session
     )
+
+
+async def _mi_reaccion(cliente, update, yo_id: int, GetMessageReactionsListRequest) -> str | None:
+    """Qué emoji puse yo en este mensaje, si puse alguno.
+
+    En grupos grandes (miles de miembros, como el de MLB) Telegram
+    manda la actualización "resumida": solo los conteos totales, sin
+    decir quién reaccionó -- `recent_reactions` llega vacío justo en
+    los grupos donde esto más se usa. Por eso primero se intenta ahí
+    (rápido) y si no hay nada se pide la lista completa de reacciones
+    de ESE mensaje puntual, que sí la trae siempre."""
+    reacciones = getattr(update.reactions, "recent_reactions", None) or []
+    for r in reacciones:
+        if getattr(getattr(r, "peer_id", None), "user_id", None) == yo_id:
+            return getattr(r.reaction, "emoticon", None)
+
+    try:
+        resultado = await cliente(GetMessageReactionsListRequest(
+            peer=update.peer, id=update.msg_id, limit=100,
+        ))
+    except Exception:
+        log.exception("No pude pedir la lista completa de reacciones")
+        return None
+
+    for r in getattr(resultado, "reactions", []):
+        if getattr(getattr(r, "peer_id", None), "user_id", None) == yo_id:
+            return getattr(r.reaction, "emoticon", None)
+    return None
+
+
+async def _descargar_si_hay(cliente, mensaje) -> str | None:
+    """Baja la foto a disco y devuelve la ruta. Si falla, el mensaje se
+    guarda igual pero sin imagen -- una foto que no bajó no puede
+    perder el texto del pick."""
+    import os
+    import uuid
+
+    try:
+        carpeta = carpeta_fotos()
+        destino = os.path.join(carpeta, f"{uuid.uuid4().hex}.jpg")
+        ruta = await cliente.download_media(mensaje, file=destino)
+        return ruta
+    except Exception:
+        log.exception("No pude descargar la foto del mensaje")
+        return None
 
 
 def _emojis_configurados() -> set[str]:
@@ -117,6 +162,7 @@ async def escuchar() -> None:
     # siempre y marcás lo que te sirve con un toque.
     #
     # Solo cuentan TUS reacciones. Que otro reaccione no guarda nada.
+    from telethon.tl.functions.messages import GetMessageReactionsListRequest
     from telethon.tl.types import UpdateMessageReactions
 
     yo_id: int | None = None
@@ -132,16 +178,8 @@ async def escuchar() -> None:
             if yo_id is None:
                 yo_id = (await cliente.get_me()).id
 
-            reacciones = getattr(update.reactions, "recent_reactions", None) or []
-            mias = [
-                r for r in reacciones
-                if getattr(getattr(r, "peer_id", None), "user_id", None) == yo_id
-            ]
-            if not mias:
-                return
-
-            emoji = getattr(mias[-1].reaction, "emoticon", None)
-            if emoji not in emojis:
+            emoji = await _mi_reaccion(cliente, update, yo_id, GetMessageReactionsListRequest)
+            if emoji is None or emoji not in emojis:
                 return
 
             mensaje = await cliente.get_messages(update.peer, ids=update.msg_id)
@@ -149,7 +187,8 @@ async def escuchar() -> None:
                 return
 
             texto = (mensaje.message or "").strip()
-            if not texto:
+            con_foto = bool(getattr(mensaje, "photo", None))
+            if not texto and not con_foto:
                 return
 
             autor = None
@@ -163,7 +202,11 @@ async def escuchar() -> None:
             fuente = _fuente_de(await mensaje.get_chat(), fuentes)
             origen = fuente["nombre"] if fuente else "marcado con reacción"
 
-            await asyncio.to_thread(guardar_mensaje_grupo, origen, autor, texto)
+            foto = await _descargar_si_hay(cliente, mensaje) if con_foto else None
+
+            await asyncio.to_thread(
+                guardar_mensaje_grupo, origen, autor, texto or "(imagen)", foto
+            )
             log.info("Guardado por reacción %s desde %s", emoji, origen)
         except Exception:
             log.exception("Error procesando una reacción")
@@ -196,8 +239,10 @@ async def escuchar() -> None:
             if not pasa(fuente, texto, autor, con_foto):
                 return
 
+            foto = await _descargar_si_hay(cliente, evento.message) if con_foto else None
+
             await asyncio.to_thread(
-                guardar_mensaje_grupo, fuente["nombre"], autor, texto
+                guardar_mensaje_grupo, fuente["nombre"], autor, texto, foto
             )
             log.info("Guardado de %s (%d caracteres)", fuente["nombre"], len(texto))
         except Exception:

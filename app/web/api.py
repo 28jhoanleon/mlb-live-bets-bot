@@ -340,17 +340,99 @@ async def cuota_manual(request: Request) -> JSONResponse:
 
 
 async def mensajes_api(request: Request) -> JSONResponse:
-    """Mensajes capturados del grupo de picks."""
+    """Mensajes capturados del grupo de picks, más las fuentes seguidas
+    (para que la web sepa qué grupo hay detrás de cada origen y pueda
+    ofrecer dejar de seguirlo)."""
     if not _clave_ok(request.query_params.get("k")):
         return JSONResponse({"detail": "Clave incorrecta"}, status_code=401)
 
     from app.db.database import leer_mensajes_grupo
 
     try:
-        return JSONResponse({"mensajes": await asyncio.to_thread(leer_mensajes_grupo)})
+        mensajes = await asyncio.to_thread(leer_mensajes_grupo)
+        for m in mensajes:
+            m["tiene_foto"] = bool(m.pop("foto", None))
+        return JSONResponse({"mensajes": mensajes})
     except Exception:
         log.exception("Error leyendo los mensajes del grupo")
         return JSONResponse({"detail": "No pude leerlos"}, status_code=500)
+
+
+async def mensaje_foto(request: Request):
+    """Sirve la imagen de un mensaje. Sin la clave, no se entrega nada:
+    aunque sea solo una captura de pick, es contenido de un grupo
+    privado y no tiene por qué quedar abierto."""
+    if not _clave_ok(request.query_params.get("k")):
+        return JSONResponse({"detail": "Clave incorrecta"}, status_code=401)
+
+    from app.db.database import _connection
+
+    mensaje_id = request.query_params.get("id")
+    if not mensaje_id or not mensaje_id.isdigit():
+        return JSONResponse({"detail": "Falta el id"}, status_code=400)
+
+    def _ruta() -> str | None:
+        with _connection() as conn:
+            fila = conn.execute(
+                "SELECT foto FROM mensajes_grupo WHERE id = ?", (int(mensaje_id),)
+            ).fetchone()
+        return fila["foto"] if fila else None
+
+    ruta = await asyncio.to_thread(_ruta)
+    if not ruta or not os.path.exists(ruta):
+        return JSONResponse({"detail": "No hay foto"}, status_code=404)
+    return FileResponse(ruta)
+
+
+async def mensajes_accion(request: Request) -> JSONResponse:
+    """Borrar un mensaje o una fuente entera desde la web.
+
+    Administrar esto desde el celular es mucho más cómodo que por
+    comandos: se ve lo que se borra."""
+    if not _clave_ok(request.query_params.get("k")):
+        return JSONResponse({"detail": "Clave incorrecta"}, status_code=401)
+
+    from app.db.database import (
+        borrar_fuente,
+        borrar_mensaje_grupo,
+        borrar_mensajes_de,
+    )
+
+    accion = request.query_params.get("accion", "")
+
+    if accion == "mensaje":
+        crudo = request.query_params.get("id", "")
+        if not crudo.isdigit():
+            return JSONResponse({"detail": "Id inválido"}, status_code=400)
+        ok = await asyncio.to_thread(borrar_mensaje_grupo, int(crudo))
+        return JSONResponse({"ok": ok}, status_code=200 if ok else 404)
+
+    if accion == "fuente":
+        origen = request.query_params.get("origen", "")
+        grupo = request.query_params.get("grupo", "")
+        if not origen:
+            return JSONResponse({"detail": "Falta la fuente"}, status_code=400)
+        borrados = await asyncio.to_thread(borrar_mensajes_de, origen)
+        # Si además mandaron el grupo, se deja de seguir.
+        if grupo:
+            await asyncio.to_thread(borrar_fuente, grupo)
+        return JSONResponse({"ok": True, "borrados": borrados})
+
+    return JSONResponse({"detail": "Acción desconocida"}, status_code=400)
+
+
+async def fuentes_api(request: Request) -> JSONResponse:
+    """Qué grupos se están siguiendo, para administrarlos desde la web."""
+    if not _clave_ok(request.query_params.get("k")):
+        return JSONResponse({"detail": "Clave incorrecta"}, status_code=401)
+
+    from app.db.database import listar_fuentes
+
+    try:
+        return JSONResponse({"fuentes": await asyncio.to_thread(listar_fuentes)})
+    except Exception:
+        log.exception("Error leyendo las fuentes")
+        return JSONResponse({"detail": "No pude leerlas"}, status_code=500)
 
 
 async def index(request: Request) -> FileResponse:
@@ -380,6 +462,9 @@ app = Starlette(
         Route("/api/mejorar", mejorar_api),
         Route("/api/cuota", cuota_manual),
         Route("/api/mensajes", mensajes_api),
+        Route("/api/mensaje-foto", mensaje_foto),
+        Route("/api/mensajes-accion", mensajes_accion),
+        Route("/api/fuentes", fuentes_api),
         Route("/api/creditos", creditos_api),
     ]
 )

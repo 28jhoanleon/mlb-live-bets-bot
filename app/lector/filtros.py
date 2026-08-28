@@ -45,12 +45,12 @@ def tiene_link(texto: str) -> bool:
 # ("stake") y no hace falta acordarse de todos sus dominios: Stake usa
 # varios según el país, y pba.stake.bet.ar es el de Buenos Aires.
 _CASAS = {
-    "stake": ("stake.bet.ar", "pba.stake", "stake.com", "stake.bet"),
+    # SOLO el Stake de Buenos Aires. Las otras variantes (stake.com,
+    # stake.bet) son de otros países y no sirven acá: un cupón de esas
+    # no se puede copiar desde Argentina.
+    "stake": ("pba.stake",),
+    "pba": ("pba.stake",),
     "bet365": ("bet365.com", "bet365.bet.ar", "bet365"),
-    "betano": ("betano.bet.ar", "betano.com", "betano"),
-    "codere": ("codere.bet.ar", "codere.com"),
-    "bplay": ("bplay.bet.ar", "bplay.com"),
-    "betsson": ("betsson.bet.ar", "betsson.com"),
 }
 
 
