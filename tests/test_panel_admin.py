@@ -49,7 +49,8 @@ class TestElPanelMuestraLosFiltros:
 class TestBotonDejarDeSeguir:
     def test_cada_fuente_tiene_su_boton(self):
         i = HTML.index("async function renderPanelFuentes()")
-        bloque = HTML[i:i + 1500]
+        j = HTML.index("function _describirFiltros")
+        bloque = HTML[i:j]
         assert "dejarFuente(" in bloque
         assert "Dejar de seguir" in bloque
 
@@ -67,3 +68,23 @@ class TestNoQuedaronDuplicados:
                    "toggleFuentes", "borrarMensaje", "filtrarFuente", "enlazar"):
             n = len(re.findall(rf"function {fn}\(", HTML))
             assert n == 1, f"{fn} tiene {n} definiciones"
+
+
+class TestTituloSegunOrigen:
+    """Antes el título de cada fila era siempre el grupo, y el autor
+    quedaba en letra chica abajo -- así que una fuente creada por
+    reacción a una persona puntual parecía "seguir todo el grupo".
+    Cuando viene de una reacción, lo que importa (el autor) va arriba."""
+
+    def test_hay_logica_de_titulo_condicional(self):
+        i = HTML.index("async function renderPanelFuentes()")
+        j = HTML.index("function _describirFiltros")
+        bloque = HTML[i:j]
+        assert "porReaccion" in bloque
+        assert "f.autores.split(" in bloque
+
+    def test_marca_visualmente_que_vino_de_una_reaccion(self):
+        i = HTML.index("async function renderPanelFuentes()")
+        j = HTML.index("function _describirFiltros")
+        bloque = HTML[i:j]
+        assert "por reacción" in bloque
