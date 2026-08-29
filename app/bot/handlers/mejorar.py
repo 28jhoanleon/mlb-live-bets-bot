@@ -54,25 +54,33 @@ def _fmt_pick(pick) -> str:
             f"{pick.market_probability_pct}%")
 
 
-def _fmt_tramo_seguro(t) -> str:
+def _fmt_tramo_seguro(t, equipo: str | None = None) -> str:
     mercado = nombre_stake_texto(t.market)
+    jugador = escape_md(t.player)
+    if equipo:
+        # El equipo va pegado al nombre, no solo en el título del
+        # partido: en una combinada del mismo partido con jugadores de
+        # los dos lados, el título ("Rays @ Tigers") no alcanza para
+        # saber de cuál es cada uno.
+        jugador += f" _({escape_md(equipo)})_"
+
     if getattr(t, "no_alcanza", False):
         # Ninguna línea de este mercado llega al objetivo: se marca en
         # vez de esconderlo, porque saber CUÁL es el tramo que no da es
         # lo que permite decidir si sacarlo.
         return (
-            f"❌ {escape_md(t.player)} — _{escape_md(mercado)}_\n"
+            f"❌ {jugador} — _{escape_md(mercado)}_\n"
             f"   ni con {escape_md(t.linea_nueva)} pasa del {t.probabilidad}% "
             f"— *sacala*"
         )
     if t.cambio:
         return (
-            f"🟢 {escape_md(t.player)} — _{escape_md(mercado)}_\n"
+            f"🟢 {jugador} — _{escape_md(mercado)}_\n"
             f"   {escape_md(t.linea_original)} → *{escape_md(t.linea_nueva)}* "
             f"· {t.probabilidad}%"
         )
     return (
-        f"✅ {escape_md(t.player)} — _{escape_md(mercado)}_\n"
+        f"✅ {jugador} — _{escape_md(mercado)}_\n"
         f"   {escape_md(t.linea_nueva)} · {t.probabilidad}% _(ya estaba bien)_"
     )
 
@@ -109,18 +117,38 @@ async def _responder_version_segura(aviso, legs_raw: list[dict], chat_id: int) -
     partes = [f"🛡 *Versión segura* (objetivo {objetivo:.1f}% por tramo){nota_calibrado}", ""]
 
     # Agrupado por partido: con 11 tramos de 5 juegos distintos, una
-    # lista plana es ilegible.
+    # lista plana es ilegible. El título del partido se muestra SIEMPRE
+    # (antes solo si había más de uno), porque incluso con un solo
+    # partido, sin el encabezado no queda claro contra quién juegan.
+    from app.analysis.probability import _buscar_jugador_cacheado
+
+    def _equipo_de(nombre_jugador: str) -> str | None:
+        # version_segura ya pasó por esta misma búsqueda para estimar
+        # probabilidad, así que esto es un acierto de caché: no pega a
+        # la red de nuevo.
+        try:
+            datos = _buscar_jugador_cacheado(nombre_jugador)
+            return (datos or {}).get("team")
+        except Exception:
+            return None
+
     por_partido: dict[str, list] = {}
     for t in tramos:
         por_partido.setdefault(t.match or "Sin partido", []).append(t)
 
     for partido, del_partido in por_partido.items():
-        if len(por_partido) > 1:
-            partes.append(f"*{escape_md(partido_corto(partido))}*")
+        partes.append(f"⚾ *{escape_md(partido_corto(partido))}*")
+        # Si en este partido hay jugadores de los dos equipos, aclarar
+        # el equipo de cada uno; si todos son del mismo (o no se sabe),
+        # ya lo dice el título y repetirlo en cada línea es ruido.
+        equipos_del_grupo = {_equipo_de(t.player) for t in del_partido}
+        equipos_del_grupo.discard(None)
+        aclarar_equipo = len(equipos_del_grupo) > 1
+
         for t in del_partido:
-            partes.append(_fmt_tramo_seguro(t))
-        if len(por_partido) > 1:
-            partes.append("")
+            equipo = _equipo_de(t.player) if aclarar_equipo else None
+            partes.append(_fmt_tramo_seguro(t, equipo))
+        partes.append("")
 
 
     descartados = [t for t in tramos if getattr(t, "no_alcanza", False)]

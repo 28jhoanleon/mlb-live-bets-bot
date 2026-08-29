@@ -262,7 +262,12 @@ body{
 #panelFuentes{margin-bottom:6px}
 .grupo-sep{
   margin:6px 14px 10px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;
-  color:var(--muted);opacity:.7;
+  color:var(--muted);opacity:.7;display:flex;justify-content:space-between;align-items:center;
+}
+.grupo-sep__borrar{
+  background:none;border:none;color:var(--clay,#f88);font-size:10.5px;
+  letter-spacing:normal;text-transform:none;cursor:pointer;font-family:inherit;
+  padding:2px 0;opacity:.85;
 }
 .fuentes{margin-top:4px}
 .msg__foto{display:block;max-width:100%;border-radius:8px;margin:2px 0 8px;cursor:zoom-in}
@@ -596,7 +601,10 @@ body{
 <div id="carrito" class="carrito" hidden></div>
 <main id="grupo" hidden>
   <div id="panelFuentes"></div>
-  <div class="grupo-sep">Mensajes</div>
+  <div class="grupo-sep">
+    Mensajes
+    <button class="grupo-sep__borrar" onclick="borrarTodosLosMensajes()">Borrar todos</button>
+  </div>
   <p class="foot" id="grupoEstado">Cargando…</p>
   <div id="listaMensajes"></div>
 </main>
@@ -1303,9 +1311,9 @@ async function renderPanelFuentes(){
     <div class="panel-fuentes">
       <div class="panel-fuentes__head" onclick="toggleFuentes()">
         <b>Siguiendo (${_fuentes.length})</b>
-        <span id="flechaFuentes">▾</span>
+        <span id="flechaFuentes">▸</span>
       </div>
-      <div id="listaFuentes" class="panel-fuentes__lista">
+      <div id="listaFuentes" class="panel-fuentes__lista" style="display:none">
         ${_fuentes.map(f => {
           const porReaccion = !!f.solo_apuestas && !!f.autores;
           // Si vino de una reacción, lo que importa es A QUIÉN seguís,
@@ -1386,6 +1394,21 @@ async function borrarMensaje(id, btn){
   } catch (e) {
     btn.disabled = false;
     alert('No se pudo borrar.');
+  }
+}
+
+// Vacía los mensajes guardados. NO toca las fuentes -- seguís
+// siguiendo lo mismo, solo se limpia lo acumulado hasta ahora.
+async function borrarTodosLosMensajes(){
+  if (!confirm('¿Borrar TODOS los mensajes guardados? Las fuentes que seguís no se tocan.')) return;
+  try {
+    const r = await fetch(
+      `/api/mensajes-accion?k=${encodeURIComponent(KEY)}&accion=todos`,
+      {cache:'no-store'});
+    if (!r.ok) throw new Error('no se pudo');
+    await cargarMensajes();
+  } catch (e) {
+    alert('No se pudo borrar todo.');
   }
 }
 

@@ -88,3 +88,37 @@ class TestTituloSegunOrigen:
         j = HTML.index("function _describirFiltros")
         bloque = HTML[i:j]
         assert "por reacción" in bloque
+
+
+class TestBorrarTodo:
+    """Botón para vaciar la pestaña Grupo entera sin dejar de seguir
+    nada -- distinto de "Dejar de seguir", que borra y desuscribe."""
+
+    def test_hay_boton_para_borrar_todo(self):
+        assert "borrarTodosLosMensajes()" in HTML
+        assert "Borrar todos" in HTML
+
+    def test_pide_confirmacion(self):
+        i = HTML.index("async function borrarTodosLosMensajes()")
+        bloque = HTML[i:i + 300]
+        assert "confirm(" in bloque
+
+    def test_aclara_que_no_toca_las_fuentes(self):
+        i = HTML.index("async function borrarTodosLosMensajes()")
+        bloque = HTML[i:i + 300]
+        assert "no se tocan" in bloque or "NO toca" in bloque
+
+
+class TestPanelColapsadoPorDefault:
+    """Reportado: la lista de fuentes aparecía siempre desplegada,
+    ocupando pantalla de entrada."""
+
+    def test_arranca_cerrado(self):
+        i = HTML.index('id="listaFuentes"')
+        linea = HTML[i:i + 80]
+        assert "display:none" in linea
+
+    def test_la_flecha_arranca_apuntando_a_cerrado(self):
+        i = HTML.index('id="flechaFuentes"')
+        linea = HTML[i:i + 60]
+        assert "▸" in linea

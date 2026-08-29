@@ -169,3 +169,35 @@ class TestReaccionesEnGruposGrandes:
 
         fuente = pathlib.Path("app/lector/cliente.py").read_text()
         assert "async def _mi_reaccion(" in fuente
+
+
+class TestBorrarTodosLosMensajes:
+    def test_borra_todo(self, db):
+        db.guardar_mensaje_grupo("A", "x", "pick 1")
+        db.guardar_mensaje_grupo("B", "y", "pick 2")
+        assert db.borrar_todos_los_mensajes() == 2
+        assert db.leer_mensajes_grupo() == []
+
+    def test_no_toca_las_fuentes(self, db):
+        db.agregar_fuente("A", "grupo_a")
+        db.guardar_mensaje_grupo("A", "x", "pick 1")
+        db.borrar_todos_los_mensajes()
+        assert len(db.listar_fuentes()) == 1
+
+    def test_borra_las_fotos_del_disco(self, db, tmp_path):
+        archivo = tmp_path / "f.jpg"
+        archivo.write_bytes(b"x")
+        db.guardar_mensaje_grupo("A", "x", "pick", foto=str(archivo))
+        db.borrar_todos_los_mensajes()
+        assert not archivo.exists()
+
+    def test_con_la_base_vacia_no_rompe(self, db):
+        assert db.borrar_todos_los_mensajes() == 0
+
+
+class TestEndpointBorrarTodos:
+    def test_existe_la_accion_todos(self):
+        import pathlib
+
+        fuente = pathlib.Path("app/web/api.py").read_text()
+        assert 'accion == "todos"' in fuente

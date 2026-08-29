@@ -396,6 +396,7 @@ async def mensajes_accion(request: Request) -> JSONResponse:
         borrar_fuente,
         borrar_mensaje_grupo,
         borrar_mensajes_de,
+        borrar_todos_los_mensajes,
     )
 
     accion = request.query_params.get("accion", "")
@@ -406,6 +407,12 @@ async def mensajes_accion(request: Request) -> JSONResponse:
             return JSONResponse({"detail": "Id inválido"}, status_code=400)
         ok = await asyncio.to_thread(borrar_mensaje_grupo, int(crudo))
         return JSONResponse({"ok": ok}, status_code=200 if ok else 404)
+
+    if accion == "todos":
+        # Vacía los mensajes guardados; las fuentes siguen igual, esto
+        # NO deja de seguir nada.
+        borrados = await asyncio.to_thread(borrar_todos_los_mensajes)
+        return JSONResponse({"ok": True, "borrados": borrados})
 
     if accion == "fuente":
         origen = request.query_params.get("origen", "")

@@ -786,6 +786,22 @@ def borrar_mensajes_de(origen: str) -> int:
     return cur.rowcount
 
 
+def borrar_todos_los_mensajes() -> int:
+    """Vacía la pestaña Grupo entera, fotos incluidas. NO toca las
+    fuentes: seguís siguiendo lo mismo, solo se limpia lo acumulado."""
+    with _connection() as conn:
+        fotos = [
+            f["foto"] for f in conn.execute(
+                "SELECT foto FROM mensajes_grupo WHERE foto IS NOT NULL"
+            ).fetchall()
+        ]
+        cur = conn.execute("DELETE FROM mensajes_grupo")
+
+    for foto in fotos:
+        _borrar_archivo(foto)
+    return cur.rowcount
+
+
 def _borrar_archivo(ruta: str) -> None:
     import os
 
