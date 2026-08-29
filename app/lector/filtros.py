@@ -39,12 +39,16 @@ def autor_permitido(autor: str | None, permitidos: str | None) -> bool:
 def autor_id_permitido(autor_id: int | None, ids_permitidos: str | None) -> bool:
     """Igual que autor_permitido pero por id numérico de Telegram, que
     es exacto: dos personas nunca comparten id, a diferencia del nombre.
+
+    El campo guarda pares "id:nombre" (ver database._parsear_pares_autor);
+    acá solo importa la parte del id.
     """
-    ids = _lista(ids_permitidos)
-    if not ids:
+    crudos = _lista(ids_permitidos)
+    if not crudos:
         return True
     if autor_id is None:
         return False
+    ids = {c.split(":", 1)[0] for c in crudos}
     return str(autor_id) in ids
 
 

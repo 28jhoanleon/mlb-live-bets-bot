@@ -238,20 +238,25 @@ class TestSoloApuestas:
 
 
 class TestAgregarAutorAFuente:
-    def test_suma_un_autor_nuevo(self, db):
-        db.agregar_fuente("MLB", "grupo_mlb", autores="Tole")
-        db.agregar_autor_a_fuente("grupo_mlb", "Ludo")
-        assert db.listar_fuentes()[0]["autores"] == "Tole,Ludo"
+    """Ahora exige id: agregar sin id reintroduciría la ambigüedad de
+    nombre que este mecanismo vino a resolver."""
 
-    def test_no_duplica_si_ya_estaba(self, db):
-        db.agregar_fuente("MLB", "grupo_mlb", autores="Ludo")
-        db.agregar_autor_a_fuente("grupo_mlb", "Ludo")
-        assert db.listar_fuentes()[0]["autores"] == "Ludo"
+    def test_suma_un_autor_nuevo_con_id(self, db):
+        db.agregar_fuente("MLB", "grupo_mlb", autor_ids="111:Tole")
+        db.agregar_autor_a_fuente("grupo_mlb", "Ludo", autor_id=222)
+        assert db.listar_fuentes()[0]["autor_ids"] == "111:Tole,222:Ludo"
 
-    def test_no_distingue_mayusculas_para_no_duplicar(self, db):
-        db.agregar_fuente("MLB", "grupo_mlb", autores="Ludo")
-        db.agregar_autor_a_fuente("grupo_mlb", "ludo")
-        assert db.listar_fuentes()[0]["autores"] == "Ludo"
+    def test_no_duplica_si_ya_estaba_el_id(self, db):
+        db.agregar_fuente("MLB", "grupo_mlb", autor_ids="111:Ludo")
+        db.agregar_autor_a_fuente("grupo_mlb", "Ludo", autor_id=111)
+        assert db.listar_fuentes()[0]["autor_ids"] == "111:Ludo"
+
+    def test_sin_id_no_agrega_nada(self, db):
+        """Sin id no hay forma confiable de identificar a la persona
+        después -- mejor no guardarlo que guardarlo ambiguo."""
+        db.agregar_fuente("MLB", "grupo_mlb", autor_ids="111:Ludo")
+        db.agregar_autor_a_fuente("grupo_mlb", "Otro", autor_id=None)
+        assert db.listar_fuentes()[0]["autor_ids"] == "111:Ludo"
 
     def test_fuente_inexistente_no_rompe(self, db):
         db.agregar_autor_a_fuente("no_existe", "Juan")  # no debe lanzar
@@ -310,15 +315,38 @@ class TestFiltroPorId:
         assert autor_id_permitido(None, "")
 
 
-class TestAgregarAutorConId:
-    def test_guarda_nombre_e_id(self, db):
-        db.agregar_fuente("MLB", "grupo1", autores="Tole", autor_ids="")
-        db.agregar_autor_a_fuente("grupo1", "Ludo", autor_id=555)
-        f = db.listar_fuentes()[0]
-        assert f["autores"] == "Tole,Ludo"
-        assert f["autor_ids"] == "555"
+class TestQuitarUnaPersonaSinAfectarAlResto:
+    """Lo que pediste: separar por persona y poder sacar solo a una."""
 
-    def test_no_duplica_el_id(self, db):
-        db.agregar_fuente("MLB", "grupo1", autor_ids="555")
-        db.agregar_autor_a_fuente("grupo1", "Ludo", autor_id=555)
-        assert db.listar_fuentes()[0]["autor_ids"] == "555"
+    def test_saca_solo_a_esa_persona(self, db):
+        db.agregar_fuente("Grupo", "g1", autor_ids="111:Cara Roja,222:leandro,333:Tin",
+                          solo_apuestas=True)
+        resultado = db.quitar_autor_de_fuente("g1", 333)
+        assert resultado == "autor"
+        f = db.listar_fuentes()[0]
+        assert f["autor_ids"] == "111:Cara Roja,222:leandro"
+        assert "Tin" not in f["autores"]
+
+    def test_las_demas_personas_siguen_intactas(self, db):
+        db.agregar_fuente("Grupo", "g1", autor_ids="111:Cara Roja,222:leandro",
+                          solo_apuestas=True)
+        db.quitar_autor_de_fuente("g1", 111)
+        f = db.listar_fuentes()[0]
+        assert "leandro" in f["autores"]
+        assert "222" in f["autor_ids"]
+
+    def test_si_era_la_ultima_persona_deja_de_seguir_el_grupo_entero(self, db):
+        """Un filtro "solo apuestas" sin nadie a quien aplicarle no
+        tiene sentido -- y dejarlo vacío caería en "sin filtros, pasa
+        todo", que es peor."""
+        db.agregar_fuente("Grupo", "g1", autor_ids="111:Cara Roja", solo_apuestas=True)
+        resultado = db.quitar_autor_de_fuente("g1", 111)
+        assert resultado == "fuente"
+        assert db.listar_fuentes() == []
+
+    def test_persona_inexistente_no_hace_nada(self, db):
+        db.agregar_fuente("Grupo", "g1", autor_ids="111:Cara Roja", solo_apuestas=True)
+        assert db.quitar_autor_de_fuente("g1", 999) == "nada"
+
+    def test_grupo_inexistente_no_rompe(self, db):
+        assert db.quitar_autor_de_fuente("no-existe", 111) == "nada"

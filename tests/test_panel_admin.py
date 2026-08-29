@@ -71,17 +71,16 @@ class TestNoQuedaronDuplicados:
 
 
 class TestTituloSegunOrigen:
-    """Antes el título de cada fila era siempre el grupo, y el autor
-    quedaba en letra chica abajo -- así que una fuente creada por
-    reacción a una persona puntual parecía "seguir todo el grupo".
-    Cuando viene de una reacción, lo que importa (el autor) va arriba."""
+    """Ahora cada persona seguida por reacción es su propio chip, con
+    su propia × -- antes iban todas juntas en un solo texto y no se
+    podía sacar a una sin sacarlas a todas."""
 
     def test_hay_logica_de_titulo_condicional(self):
         i = HTML.index("async function renderPanelFuentes()")
         j = HTML.index("function _describirFiltros")
         bloque = HTML[i:j]
         assert "porReaccion" in bloque
-        assert "f.autores.split(" in bloque
+        assert "f.autor_ids.split(" in bloque
 
     def test_marca_visualmente_que_vino_de_una_reaccion(self):
         i = HTML.index("async function renderPanelFuentes()")
@@ -122,3 +121,29 @@ class TestPanelColapsadoPorDefault:
         i = HTML.index('id="flechaFuentes"')
         linea = HTML[i:i + 60]
         assert "▸" in linea
+
+
+class TestSepararPorPersona:
+    """Lo que pediste: ver a cada persona por separado y poder dejar de
+    seguir a una sola, no a todo el grupo."""
+
+    def test_cada_persona_es_su_propio_chip(self):
+        i = HTML.index("async function renderPanelFuentes()")
+        bloque = HTML[i:i + 2500]
+        assert "autor-chip" in bloque
+        assert "personas.map(" in bloque
+
+    def test_cada_chip_tiene_su_propia_x(self):
+        i = HTML.index("async function renderPanelFuentes()")
+        bloque = HTML[i:i + 2500]
+        assert "quitarAutor(" in bloque
+
+    def test_tambien_hay_opcion_de_sacar_a_todos_de_una(self):
+        i = HTML.index("async function renderPanelFuentes()")
+        bloque = HTML[i:i + 2500]
+        assert "Dejar de seguir a todos" in bloque
+
+    def test_quitarAutor_pide_confirmacion(self):
+        i = HTML.index("async function quitarAutor(")
+        bloque = HTML[i:i + 300]
+        assert "confirm(" in bloque

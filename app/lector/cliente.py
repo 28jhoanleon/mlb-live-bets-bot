@@ -298,7 +298,7 @@ async def escuchar() -> None:
             handle = getattr(chat, "username", None) or str(getattr(chat, "id", ""))
             if fuente is None:
                 nombre = getattr(chat, "title", None) or handle
-                ids = str(autor_id) if autor_id is not None else ""
+                ids = f"{autor_id}:{autor or ''}" if autor_id is not None else ""
                 await asyncio.to_thread(
                     agregar_fuente, nombre, handle, autor or "", False, False,
                     "", "", True, ids,

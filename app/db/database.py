@@ -705,37 +705,91 @@ def agregar_fuente(
         )
 
 
+def _parsear_pares_autor(campo: str | None) -> list[tuple[int, str]]:
+    """`autor_ids` guarda pares "id:nombre", no dos listas separadas.
+
+    Antes eran dos columnas (autores, autor_ids) que se llenaban por
+    separado -- si alguna vez un nombre se agregaba sin id o viceversa,
+    quedaban desalineadas y ya no se sabía con certeza cuál nombre
+    correspondía a cuál id. Con el par junto, esa ambigüedad no existe.
+    """
+    pares = []
+    for token in (campo or "").split(","):
+        token = token.strip()
+        if not token:
+            continue
+        id_str, _, nombre = token.partition(":")
+        if id_str.lstrip("-").isdigit():
+            pares.append((int(id_str), nombre))
+    return pares
+
+
+def _formatear_pares_autor(pares: list[tuple[int, str]]) -> str:
+    return ",".join(f"{i}:{n}" for i, n in pares)
+
+
 def agregar_autor_a_fuente(grupo: str, autor: str, autor_id: int | None = None) -> None:
-    """Suma un autor (nombre Y, si se tiene, id numérico) a una fuente ya
-    seguida, sin duplicar ni pisar los que ya estaban.
+    """Suma un autor (con su id) a una fuente ya seguida, sin duplicar
+    ni pisar los que ya estaban.
 
     El id es lo que de verdad distingue a una persona -- el nombre es
-    solo para mostrarlo en el panel. Comparar por nombre es ambiguo: en
-    un grupo de miles de personas, alguien que se llama "C" o "Le" es
-    una subcadena de "Cara Roja" o "leandro", así que un filtro por
-    texto lo dejaría pasar sin querer. El id de Telegram no tiene ese
-    problema: es único por persona.
+    solo para mostrarlo. Comparar por nombre es ambiguo: en un grupo de
+    miles de personas, alguien que se llama "C" o "Le" es una subcadena
+    de "Cara Roja" o "leandro", así que un filtro de texto lo dejaría
+    pasar sin querer. Sin id no se agrega -- agregarlo solo por nombre
+    reintroduciría esa misma ambigüedad.
     """
+    if autor_id is None:
+        return
+
     grupo = grupo.strip().lstrip("@")
     with _connection() as conn:
         fila = conn.execute(
-            "SELECT autores, autor_ids FROM fuentes WHERE grupo = ?", (grupo,)
+            "SELECT autor_ids FROM fuentes WHERE grupo = ?", (grupo,)
         ).fetchone()
         if fila is None:
             return
 
-        actuales = [a.strip() for a in (fila["autores"] or "").split(",") if a.strip()]
-        if autor and autor.lower() not in (a.lower() for a in actuales):
-            actuales.append(autor)
-
-        ids_actuales = [i.strip() for i in (fila["autor_ids"] or "").split(",") if i.strip()]
-        if autor_id is not None and str(autor_id) not in ids_actuales:
-            ids_actuales.append(str(autor_id))
+        pares = _parsear_pares_autor(fila["autor_ids"])
+        if autor_id not in (i for i, _ in pares):
+            pares.append((autor_id, autor or ""))
 
         conn.execute(
             "UPDATE fuentes SET autores = ?, autor_ids = ? WHERE grupo = ?",
-            (",".join(actuales), ",".join(ids_actuales), grupo),
+            (",".join(n for _, n in pares if n), _formatear_pares_autor(pares), grupo),
         )
+
+
+def quitar_autor_de_fuente(grupo: str, autor_id: int) -> str:
+    """Saca a una sola persona de una fuente, sin tocar a las demás.
+
+    Devuelve "autor" si sacó solo a esa persona y quedan otras, "fuente"
+    si al sacarla no quedó nadie más (se dejó de seguir el grupo
+    entero, para no caer en "sin filtros = pasa todo"), o "nada" si esa
+    persona no estaba.
+    """
+    grupo = grupo.strip().lstrip("@")
+    with _connection() as conn:
+        fila = conn.execute(
+            "SELECT autor_ids, solo_apuestas FROM fuentes WHERE grupo = ?", (grupo,)
+        ).fetchone()
+        if fila is None:
+            return "nada"
+
+        pares = _parsear_pares_autor(fila["autor_ids"])
+        nuevos = [(i, n) for i, n in pares if i != autor_id]
+        if len(nuevos) == len(pares):
+            return "nada"
+
+        if not nuevos and fila["solo_apuestas"]:
+            conn.execute("DELETE FROM fuentes WHERE grupo = ?", (grupo,))
+            return "fuente"
+
+        conn.execute(
+            "UPDATE fuentes SET autores = ?, autor_ids = ? WHERE grupo = ?",
+            (",".join(n for _, n in nuevos if n), _formatear_pares_autor(nuevos), grupo),
+        )
+        return "autor"
 
 
 def listar_fuentes(solo_activas: bool = True) -> list[dict[str, Any]]:

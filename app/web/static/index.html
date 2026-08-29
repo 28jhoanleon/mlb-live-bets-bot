@@ -259,6 +259,22 @@ body{
   flex-shrink:0;background:none;border:1px solid var(--line);color:var(--clay,#f88);
   font-size:11px;padding:7px 12px;border-radius:20px;cursor:pointer;font-family:inherit;
 }
+.fuente-row--grupo{display:flex;flex-direction:column;gap:8px}
+.fuente-row__cabecera{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.fuente-row__quitar-chica{
+  flex-shrink:0;background:none;border:none;color:var(--muted);
+  font-size:10.5px;cursor:pointer;font-family:inherit;text-decoration:underline;
+  text-underline-offset:2px;padding:0;
+}
+.autor-chips{display:flex;flex-wrap:wrap;gap:6px}
+.autor-chip{
+  display:inline-flex;align-items:center;gap:5px;font-size:12px;
+  border:1px solid var(--line);border-radius:20px;padding:5px 8px 5px 11px;
+}
+.autor-chip i{
+  font-style:normal;color:var(--clay,#f88);cursor:pointer;font-size:13px;
+  line-height:1;padding:0 2px;
+}
 #panelFuentes{margin-bottom:6px}
 .grupo-sep{
   margin:6px 14px 10px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;
@@ -1315,22 +1331,43 @@ async function renderPanelFuentes(){
       </div>
       <div id="listaFuentes" class="panel-fuentes__lista" style="display:none">
         ${_fuentes.map(f => {
-          const porReaccion = !!f.solo_apuestas && !!f.autores;
-          // Si vino de una reacción, lo que importa es A QUIÉN seguís,
-          // no el grupo donde lo viste -- antes el título era siempre
-          // el grupo y el autor quedaba en letra chica abajo, así que
-          // parecía que seguías el grupo entero.
-          const titulo = porReaccion ? f.autores.split(',').join(', ') : f.nombre;
-          const subtitulo = porReaccion
-            ? `en @${f.grupo} · por reacción ⭐`
-            : `@${f.grupo}`;
+          const porReaccion = !!f.solo_apuestas && !!f.autor_ids;
           const filtros = porReaccion ? 'con foto o link' : _describirFiltros(f);
           const sinFiltro = filtros.startsWith('⚠️');
+
+          if (porReaccion) {
+            // Una persona por línea, cada una con su propia × -- antes
+            // se guardaban todos juntos en un solo texto y para sacar
+            // a uno solo no había otra opción que dejar de seguir a
+            // todos.
+            const personas = f.autor_ids.split(',').map(par => {
+              const [id, ...resto] = par.split(':');
+              return {id, nombre: resto.join(':') || `id ${id}`};
+            });
+            return `
+            <div class="fuente-row fuente-row--grupo">
+              <div class="fuente-row__cabecera">
+                <span class="fuente-row__grupo">en @${esc(f.grupo)} · por reacción ⭐</span>
+                <button class="fuente-row__quitar-chica" onclick="dejarFuente('${esc(f.nombre)}')">
+                  Dejar de seguir a todos
+                </button>
+              </div>
+              <span class="fuente-row__filtros">${esc(filtros)}</span>
+              <div class="autor-chips">
+                ${personas.map(p => `
+                  <span class="autor-chip">
+                    ${esc(p.nombre)}
+                    <i onclick="quitarAutor('${esc(f.grupo)}', '${esc(p.id)}', '${esc(p.nombre)}')">×</i>
+                  </span>`).join('')}
+              </div>
+            </div>`;
+          }
+
           return `
           <div class="fuente-row">
             <div class="fuente-row__info">
-              <b>${esc(titulo)}</b>
-              <span class="fuente-row__grupo">${esc(subtitulo)}</span>
+              <b>${esc(f.nombre)}</b>
+              <span class="fuente-row__grupo">@${esc(f.grupo)}</span>
               <span class="fuente-row__filtros${sinFiltro ? ' fuente-row__filtros--alerta' : ''}">${esc(filtros)}</span>
             </div>
             <button class="fuente-row__quitar" onclick="dejarFuente('${esc(f.nombre)}')">
@@ -1428,6 +1465,24 @@ async function dejarFuente(origen){
     if (!r.ok) throw new Error('no se pudo');
     _mensajesCargados = false;
     await cargarMensajes();
+  } catch (e) {
+    alert('No se pudo.');
+  }
+}
+
+// Saca a UNA sola persona de un grupo con varias seguidas, sin tocar a
+// las demás. Si era la última, el propio backend deja de seguir el
+// grupo entero (no tiene sentido un filtro "solo apuestas" sin nadie
+// a quien aplicarle).
+async function quitarAutor(grupo, autorId, nombre){
+  if (!confirm(`¿Dejar de seguir a "${nombre}"?`)) return;
+  try {
+    const r = await fetch(
+      `/api/mensajes-accion?k=${encodeURIComponent(KEY)}&accion=autor`
+      + `&grupo=${encodeURIComponent(grupo)}&autor_id=${encodeURIComponent(autorId)}`,
+      {cache:'no-store'});
+    if (!r.ok) throw new Error('no se pudo');
+    await renderPanelFuentes();
   } catch (e) {
     alert('No se pudo.');
   }

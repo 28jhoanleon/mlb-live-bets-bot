@@ -397,6 +397,7 @@ async def mensajes_accion(request: Request) -> JSONResponse:
         borrar_mensaje_grupo,
         borrar_mensajes_de,
         borrar_todos_los_mensajes,
+        quitar_autor_de_fuente,
     )
 
     accion = request.query_params.get("accion", "")
@@ -413,6 +414,17 @@ async def mensajes_accion(request: Request) -> JSONResponse:
         # NO deja de seguir nada.
         borrados = await asyncio.to_thread(borrar_todos_los_mensajes)
         return JSONResponse({"ok": True, "borrados": borrados})
+
+    if accion == "autor":
+        # Sacar a UNA sola persona de un grupo con varias seguidas, sin
+        # tocar a las demás -- antes solo se podía dejar de seguir el
+        # grupo entero.
+        grupo = request.query_params.get("grupo", "")
+        crudo = request.query_params.get("autor_id", "")
+        if not grupo or not crudo.lstrip("-").isdigit():
+            return JSONResponse({"detail": "Faltan datos"}, status_code=400)
+        resultado = await asyncio.to_thread(quitar_autor_de_fuente, grupo, int(crudo))
+        return JSONResponse({"ok": resultado != "nada", "resultado": resultado})
 
     if accion == "fuente":
         origen = request.query_params.get("origen", "")
