@@ -1368,7 +1368,7 @@ async function renderPanelFuentes(){
             // todos.
             const personas = f.autor_ids.split(',').map(par => {
               const [id, ...resto] = par.split(':');
-              return {id, nombre: resto.join(':') || `id ${id}`};
+              return {id, nombre: resto.join(':') || `usuario sin nombre (${id})`};
             });
             return `
             <div class="fuente-row fuente-row--grupo">

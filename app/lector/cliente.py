@@ -54,6 +54,31 @@ def configurado() -> bool:
     )
 
 
+def _nombre_de(remitente) -> str | None:
+    """El nombre para mostrar, probando varias fuentes.
+
+    `first_name` falla para admins que postean como anónimos (aparecen
+    como un chat/canal, no como usuario) -- ahí Telegram da `.title` en
+    vez de `.first_name`. Sin este respaldo, esas personas quedaban
+    guardadas como "id 12345", que no dice nada a simple vista aunque
+    el filtro funcione bien por dentro.
+    """
+    nombre = getattr(remitente, "first_name", None)
+    if nombre:
+        apellido = getattr(remitente, "last_name", None)
+        return f"{nombre} {apellido}" if apellido else nombre
+
+    titulo = getattr(remitente, "title", None)
+    if titulo:
+        return titulo
+
+    usuario = getattr(remitente, "username", None)
+    if usuario:
+        return f"@{usuario}"
+
+    return None
+
+
 def _texto_con_links(mensaje) -> str:
     """El texto visible, más cualquier link que venga ESCONDIDO detrás
     de una palabra corta.
@@ -281,7 +306,7 @@ async def escuchar() -> None:
             autor_id = None
             try:
                 remitente = await mensaje.get_sender()
-                autor = getattr(remitente, "first_name", None)
+                autor = _nombre_de(remitente)
                 autor_id = getattr(remitente, "id", None)
             except Exception:
                 pass
@@ -344,7 +369,7 @@ async def escuchar() -> None:
             autor_id = None
             try:
                 remitente = await evento.get_sender()
-                autor = getattr(remitente, "first_name", None)
+                autor = _nombre_de(remitente)
                 autor_id = getattr(remitente, "id", None)
             except Exception:
                 pass

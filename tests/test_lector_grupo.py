@@ -244,3 +244,51 @@ class TestCanalDeDifusion:
         i = fuente.index("except BroadcastForbiddenError:")
         j = fuente.index("except Exception:", i)
         assert i < j  # el específico va ANTES que el genérico
+
+
+class TestNombreDeQuienReacciono:
+    """Bug real, con captura: las tres personas aparecían como "id
+    7829324545" en vez de sus nombres. `first_name` no está para
+    admins que postean como anónimos -- Telegram los da como un
+    chat/canal, con `.title` en vez de `.first_name`. El filtro
+    funcionaba bien por dentro (por id), pero visualmente no decía
+    nada."""
+
+    def _remitente(self, first_name=None, last_name=None, title=None, username=None):
+        import types
+
+        return types.SimpleNamespace(
+            first_name=first_name, last_name=last_name, title=title, username=username,
+        )
+
+    def test_usuario_normal(self):
+        from app.lector.cliente import _nombre_de
+
+        assert _nombre_de(self._remitente(first_name="Cara Roja")) == "Cara Roja"
+
+    def test_admin_anonimo_usa_el_titulo(self):
+        from app.lector.cliente import _nombre_de
+
+        r = self._remitente(title="Westbrook COMUNITARIO 2.0")
+        assert _nombre_de(r) == "Westbrook COMUNITARIO 2.0"
+
+    def test_con_apellido_lo_incluye(self):
+        from app.lector.cliente import _nombre_de
+
+        r = self._remitente(first_name="Juan", last_name="Pérez")
+        assert _nombre_de(r) == "Juan Pérez"
+
+    def test_ultimo_respaldo_es_el_username(self):
+        from app.lector.cliente import _nombre_de
+
+        r = self._remitente(username="tin_oficial")
+        assert _nombre_de(r) == "@tin_oficial"
+
+    def test_si_no_hay_nada_devuelve_none_no_rompe(self):
+        from app.lector.cliente import _nombre_de
+
+        assert _nombre_de(self._remitente()) is None
+
+    def test_se_usa_en_los_dos_lugares_donde_se_extrae_autor(self):
+        fuente = pathlib.Path("app/lector/cliente.py").read_text()
+        assert fuente.count("autor = _nombre_de(remitente)") == 2
