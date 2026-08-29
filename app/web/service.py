@@ -862,7 +862,8 @@ def guardar_captura(chat_id: int, imagenes: list[bytes], borrador: bool = False)
 
 def mejorar_ticket(chat_id: int, ticket_id: str | None = None) -> dict[str, Any]:
     """Versión segura de una apuesta guardada, para la web."""
-    from app.analysis.auditoria import OBJETIVO_SEGURO, version_segura
+    from app.analysis.auditoria import objetivo_calibrado, version_segura
+    from app.analysis.probability import _buscar_jugador_cacheado
 
     guardada = get_active_bet(chat_id)
     tickets = normalize(guardada or {})
@@ -875,15 +876,27 @@ def mejorar_ticket(chat_id: int, ticket_id: str | None = None) -> dict[str, Any]
             return {"ok": False, "error": "No encontré esa apuesta."}
 
     legs = [leg for t in tickets for leg in t.get("legs", [])]
-    tramos, combinada = version_segura(legs)
+    objetivo = objetivo_calibrado(chat_id)
+    tramos, combinada = version_segura(legs, objetivo)
+
+    # Equipo de cada jugador, para que la web pueda mostrar de quién es
+    # cada uno -- version_segura ya buscó a cada jugador para estimar
+    # probabilidad, así que esto es un acierto de caché, no una llamada
+    # nueva a la MLB API.
+    def _equipo_de(nombre: str) -> str | None:
+        try:
+            return (_buscar_jugador_cacheado(nombre) or {}).get("team")
+        except Exception:
+            return None
 
     return {
         "ok": True,
-        "objetivo": OBJETIVO_SEGURO,
+        "objetivo": round(objetivo, 1),
         "combinada": combinada,
         "tramos": [
             {
                 "player": t.player,
+                "equipo": _equipo_de(t.player),
                 "match": partido_corto(t.match),
                 "market": nombre_stake_texto(t.market),
                 "linea_original": t.linea_original,

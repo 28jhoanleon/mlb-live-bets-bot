@@ -227,6 +227,12 @@ body{
 .mtramo.mal{color:var(--clay)}
 .mtramo.ok{color:var(--green)}
 .mtramo i{color:var(--muted);font-style:normal;font-size:11px}
+.mejora__partido{margin-bottom:10px}
+.mejora__partido:last-of-type{margin-bottom:0}
+.mejora__partido-head{
+  font-size:12.5px;font-weight:600;color:var(--chalk);margin-bottom:5px;
+  padding-bottom:4px;border-bottom:1px solid var(--line);
+}
 .mejora__tot{margin-top:7px;font-size:12.5px;color:var(--chalk)}
 .fuentes{display:flex;gap:6px;flex-wrap:wrap;margin:0 14px 12px}
 .ftag{
@@ -1127,13 +1133,33 @@ async function verMejora(id, btn){
     const d = await r.json();
     if (!r.ok || !d.ok) throw new Error(d.error || d.detail || 'error');
 
-    const filas = d.tramos.map(t => {
-      if (t.no_alcanza) return `<div class="mtramo mal">❌ <b>${esc(t.player)}</b> — `
-        + `ni con ${esc(t.linea_nueva)} pasa del ${esc(t.prob)}% · <i>sacala</i></div>`;
-      if (t.cambio) return `<div class="mtramo ok">🟢 <b>${esc(t.player)}</b> — `
-        + `${esc(t.linea_original)} → <b>${esc(t.linea_nueva)}</b> · ${esc(t.prob)}%</div>`;
-      return `<div class="mtramo">✅ <b>${esc(t.player)}</b> — `
-        + `${esc(t.linea_nueva)} · ${esc(t.prob)}% <i>(ya estaba bien)</i></div>`;
+    // Agrupado por partido, con el equipo de cada jugador cuando hace
+    // falta -- antes era una lista plana sin ningún contexto de a qué
+    // equipo pertenecía cada uno ni contra quién jugaba.
+    const porPartido = {};
+    d.tramos.forEach(t => {
+      const clave = t.match || 'Sin partido';
+      (porPartido[clave] = porPartido[clave] || []).push(t);
+    });
+
+    const grupos = Object.entries(porPartido).map(([partido, tramos]) => {
+      const equipos = new Set(tramos.map(t => t.equipo).filter(Boolean));
+      const aclararEquipo = equipos.size > 1;
+
+      const filas = tramos.map(t => {
+        const equipo = aclararEquipo && t.equipo ? ` <i>(${esc(t.equipo)})</i>` : '';
+        if (t.no_alcanza) return `<div class="mtramo mal">❌ <b>${esc(t.player)}</b>${equipo} — `
+          + `ni con ${esc(t.linea_nueva)} pasa del ${esc(t.prob)}% · <i>sacala</i></div>`;
+        if (t.cambio) return `<div class="mtramo ok">🟢 <b>${esc(t.player)}</b>${equipo} — `
+          + `${esc(t.linea_original)} → <b>${esc(t.linea_nueva)}</b> · ${esc(t.prob)}%</div>`;
+        return `<div class="mtramo">✅ <b>${esc(t.player)}</b>${equipo} — `
+          + `${esc(t.linea_nueva)} · ${esc(t.prob)}% <i>(ya estaba bien)</i></div>`;
+      }).join('');
+
+      return `<div class="mejora__partido">
+        <div class="mejora__partido-head">⚾ ${esc(partido)}</div>
+        ${filas}
+      </div>`;
     }).join('');
 
     const ticket = btn.closest('.ticket');
@@ -1145,7 +1171,7 @@ async function verMejora(id, btn){
     }
     panel.innerHTML = `
       <div class="mejora__head">Versión segura · objetivo ${esc(d.objetivo)}% por tramo</div>
-      ${filas}
+      ${grupos}
       ${d.combinada != null
         ? `<div class="mejora__tot">Que entren todas: <b>${esc(d.combinada)}%</b></div>`
         : '<div class="mejora__tot">Ningún tramo llega al objetivo.</div>'}`;

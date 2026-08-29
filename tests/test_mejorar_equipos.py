@@ -79,3 +79,89 @@ class TestUsaLaCacheExistenteNoLaRed:
         i = fuente.index("def _equipo_de(")
         bloque = fuente[i:i + 400]
         assert "except Exception:" in bloque
+
+
+class TestElCaminoWebTambienMuestraEquipo:
+    """El botón "escudo" de la web usa app.web.service.mejorar_ticket,
+    un camino COMPLETAMENTE distinto del /mejorar de Telegram. El
+    primer arreglo solo tocó el bot; la web seguía sin agrupar por
+    partido ni mostrar el equipo -- por eso el usuario lo seguía viendo
+    plano después del fix anterior."""
+
+    def test_mejorar_ticket_incluye_el_equipo_por_jugador(self, tmp_path, monkeypatch):
+        from unittest.mock import patch
+
+        monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/w.db")
+        from app.db import database
+
+        monkeypatch.setattr(database, "_db_path", lambda: str(tmp_path / "w.db"))
+        database.init_db()
+
+        from app.web import service
+
+        database.save_active_bet(1, {"bets": [{"total_odds": "5.0", "legs": [
+            {"player": "Yandy Diaz", "market": "batter_hits", "line": "Over 1.5"},
+        ]}], "is_live": False})
+
+        tramo = LegSegura(player="Yandy Diaz", match="Tampa Bay Rays @ Detroit Tigers",
+                          market="batter_hits", linea_original="Over 1.5",
+                          linea_nueva="Over 0.5", probabilidad=91.2, cambio=True)
+
+        with patch("app.analysis.auditoria.version_segura", return_value=([tramo], 91.2)), \
+             patch("app.analysis.probability._buscar_jugador_cacheado",
+                   return_value={"team": "Tampa Bay Rays"}):
+            r = service.mejorar_ticket(1)
+
+        assert r["ok"] is True
+        assert r["tramos"][0]["equipo"] == "Tampa Bay Rays"
+
+    def test_usa_el_objetivo_calibrado_no_el_fijo(self, tmp_path, monkeypatch):
+        """El primer fix de calibración solo se conectó en el bot; acá
+        seguía usando OBJETIVO_SEGURO fijo."""
+        from unittest.mock import patch
+
+        monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/w2.db")
+        from app.db import database
+
+        monkeypatch.setattr(database, "_db_path", lambda: str(tmp_path / "w2.db"))
+        database.init_db()
+
+        from app.web import service
+
+        database.save_active_bet(2, {"bets": [{"total_odds": "5.0", "legs": [
+            {"player": "X", "market": "batter_hits", "line": "Over 0.5"},
+        ]}], "is_live": False})
+
+        with patch("app.analysis.auditoria.objetivo_calibrado", return_value=65.0) as mock_obj, \
+             patch("app.analysis.auditoria.version_segura", return_value=([], None)):
+            r = service.mejorar_ticket(2)
+
+        mock_obj.assert_called_once_with(2)
+        assert r["objetivo"] == 65.0
+
+    def test_un_jugador_sin_equipo_encontrado_no_rompe(self, tmp_path, monkeypatch):
+        from unittest.mock import patch
+
+        monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/w3.db")
+        from app.db import database
+
+        monkeypatch.setattr(database, "_db_path", lambda: str(tmp_path / "w3.db"))
+        database.init_db()
+
+        from app.web import service
+
+        database.save_active_bet(3, {"bets": [{"total_odds": "5.0", "legs": [
+            {"player": "Fantasma", "market": "batter_hits", "line": "Over 0.5"},
+        ]}], "is_live": False})
+
+        tramo = LegSegura(player="Fantasma", match="A @ B", market="batter_hits",
+                          linea_original="Over 0.5", linea_nueva="Over 0.5",
+                          probabilidad=70.0, cambio=False)
+
+        with patch("app.analysis.auditoria.version_segura", return_value=([tramo], 70.0)), \
+             patch("app.analysis.probability._buscar_jugador_cacheado",
+                   side_effect=ConnectionError("caído")):
+            r = service.mejorar_ticket(3)
+
+        assert r["ok"] is True
+        assert r["tramos"][0]["equipo"] is None
