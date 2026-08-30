@@ -277,9 +277,18 @@ async def escuchar() -> None:
     @cliente.on(events.Raw(UpdateMessageReactions))
     async def _reaccion(update):
         nonlocal yo_id
+        # Primera línea de todas, a propósito: si esto no aparece en
+        # los logs, el handler ni siquiera se está disparando para ese
+        # chat -- muy distinto de "se disparó pero algo falló adentro".
+        log.info(
+            "Reacción cruda recibida (chat_id=%s, msg_id=%s)",
+            getattr(update.peer, "channel_id", None) or getattr(update.peer, "chat_id", None),
+            update.msg_id,
+        )
         try:
             emojis = _emojis_configurados()
             if not emojis:
+                log.info("Sin emojis configurados, se ignora")
                 return
 
             if yo_id is None:
@@ -287,14 +296,15 @@ async def escuchar() -> None:
 
             emoji = await _mi_reaccion(cliente, update, yo_id, GetMessageReactionsListRequest, BroadcastForbiddenError)
             if emoji is None:
-                log.debug("Reacción recibida pero no pude identificar cuál puse yo")
+                log.info("No pude identificar cuál emoji puse yo (o no reaccioné yo)")
                 return
             if emoji not in emojis:
-                log.debug("Reacción %r no está en la lista configurada %s", emoji, emojis)
+                log.info("Reacción %r no está en la lista configurada %s", emoji, emojis)
                 return
 
             mensaje = await cliente.get_messages(update.peer, ids=update.msg_id)
             if mensaje is None:
+                log.info("get_messages no devolvió el mensaje")
                 return
 
             texto = _texto_con_links(mensaje)

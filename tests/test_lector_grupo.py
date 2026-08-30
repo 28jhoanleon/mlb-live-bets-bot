@@ -292,3 +292,37 @@ class TestNombreDeQuienReacciono:
     def test_se_usa_en_los_dos_lugares_donde_se_extrae_autor(self):
         fuente = pathlib.Path("app/lector/cliente.py").read_text()
         assert fuente.count("autor = _nombre_de(remitente)") == 2
+
+
+class TestLogsVisiblesEnRailway:
+    """Bug de diagnóstico, no de funcionalidad: los logs clave del
+    camino de reacción estaban en DEBUG, pero Railway solo muestra
+    INFO para arriba por default. Eran literalmente invisibles aunque
+    el código sí estuviera corriendo -- por eso un log real no mostraba
+    ninguna pista, ni siquiera un error.
+    """
+
+    def test_no_quedan_log_debug_en_el_camino_de_reaccion(self):
+        fuente = pathlib.Path("app/lector/cliente.py").read_text()
+        i = fuente.index("async def _reaccion(update):")
+        j = fuente.index("except Exception:\n            log.exception(\"Error procesando una reacción\")")
+        bloque = fuente[i:j]
+        assert "log.debug(" not in bloque
+
+    def test_hay_un_log_al_principio_de_todo(self):
+        """Para distinguir "el handler nunca se disparó" de "se disparó
+        pero algo falló adentro"."""
+        fuente = pathlib.Path("app/lector/cliente.py").read_text()
+        i = fuente.index("async def _reaccion(update):")
+        bloque = fuente[i:i + 500]
+        assert "Reacción cruda recibida" in bloque
+
+    def test_cada_salida_temprana_deja_rastro(self):
+        fuente = pathlib.Path("app/lector/cliente.py").read_text()
+        i = fuente.index("async def _reaccion(update):")
+        j = fuente.index("except Exception:\n            log.exception(\"Error procesando una reacción\")")
+        bloque = fuente[i:j]
+        assert "Sin emojis configurados" in bloque
+        assert "No pude identificar cuál emoji" in bloque
+        assert "no está en la lista configurada" in bloque
+        assert "get_messages no devolvió" in bloque
