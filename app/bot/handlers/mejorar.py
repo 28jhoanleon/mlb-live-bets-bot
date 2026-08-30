@@ -16,7 +16,6 @@ from app.analysis.auditoria import (
     PROB_FLOJA,
     armar_mejorada,
     auditar_legs,
-    objetivo_calibrado,
     version_segura,
 )
 from app.analysis.daily_picks import find_daily_picks
@@ -90,11 +89,15 @@ async def _responder_version_segura(aviso, legs_raw: list[dict], chat_id: int) -
 
     Es lo opuesto a una soñadora: se resigna cuota para que la
     combinada entre. Mismos jugadores y mercados, líneas más blandas.
+
+    La meta (85%) es siempre la misma; lo que se corrige con la
+    calibración es CUÁNTO CONFIAR en cada estimación antes de medirla
+    contra esa meta -- ver `_prob_calibrada` en auditoria.py para el
+    porqué de esto.
     """
-    objetivo = objetivo_calibrado(chat_id)
     try:
         tramos, combinada = await asyncio.wait_for(
-            asyncio.to_thread(version_segura, legs_raw, objetivo), timeout=120,
+            asyncio.to_thread(version_segura, legs_raw, OBJETIVO_SEGURO, chat_id), timeout=120,
         )
     except asyncio.TimeoutError:
         await aviso.edit_text("Tardó demasiado. Probá de nuevo en un rato.")
@@ -110,11 +113,7 @@ async def _responder_version_segura(aviso, legs_raw: list[dict], chat_id: int) -
         )
         return
 
-    nota_calibrado = (
-        f" _(ajustado con tu calibración real, no el {OBJETIVO_SEGURO:g}% teórico)_"
-        if abs(objetivo - OBJETIVO_SEGURO) > 0.1 else ""
-    )
-    partes = [f"🛡 *Versión segura* (objetivo {objetivo:.1f}% por tramo){nota_calibrado}", ""]
+    partes = [f"🛡 *Versión segura* (objetivo {OBJETIVO_SEGURO:g}% por tramo)", ""]
 
     # Agrupado por partido: con 11 tramos de 5 juegos distintos, una
     # lista plana es ilegible. El título del partido se muestra SIEMPRE

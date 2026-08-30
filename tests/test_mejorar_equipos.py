@@ -115,9 +115,10 @@ class TestElCaminoWebTambienMuestraEquipo:
         assert r["ok"] is True
         assert r["tramos"][0]["equipo"] == "Tampa Bay Rays"
 
-    def test_usa_el_objetivo_calibrado_no_el_fijo(self, tmp_path, monkeypatch):
-        """El primer fix de calibración solo se conectó en el bot; acá
-        seguía usando OBJETIVO_SEGURO fijo."""
+    def test_pasa_el_chat_id_a_version_segura_para_calibrar(self, tmp_path, monkeypatch):
+        """El objetivo queda fijo en OBJETIVO_SEGURO; lo que tiene que
+        viajar es el chat_id, para que version_segura pueda corregir
+        las estimaciones con la calibración real de ESE chat."""
         from unittest.mock import patch
 
         monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/w2.db")
@@ -126,18 +127,21 @@ class TestElCaminoWebTambienMuestraEquipo:
         monkeypatch.setattr(database, "_db_path", lambda: str(tmp_path / "w2.db"))
         database.init_db()
 
+        from app.analysis.auditoria import OBJETIVO_SEGURO
         from app.web import service
 
         database.save_active_bet(2, {"bets": [{"total_odds": "5.0", "legs": [
             {"player": "X", "market": "batter_hits", "line": "Over 0.5"},
         ]}], "is_live": False})
 
-        with patch("app.analysis.auditoria.objetivo_calibrado", return_value=65.0) as mock_obj, \
-             patch("app.analysis.auditoria.version_segura", return_value=([], None)):
+        with patch("app.analysis.auditoria.version_segura", return_value=([], None)) as mock_vs:
             r = service.mejorar_ticket(2)
 
-        mock_obj.assert_called_once_with(2)
-        assert r["objetivo"] == 65.0
+        mock_vs.assert_called_once()
+        args = mock_vs.call_args.args
+        assert args[1] == OBJETIVO_SEGURO
+        assert args[2] == 2
+        assert r["objetivo"] == OBJETIVO_SEGURO
 
     def test_un_jugador_sin_equipo_encontrado_no_rompe(self, tmp_path, monkeypatch):
         from unittest.mock import patch

@@ -861,8 +861,13 @@ def guardar_captura(chat_id: int, imagenes: list[bytes], borrador: bool = False)
 
 
 def mejorar_ticket(chat_id: int, ticket_id: str | None = None) -> dict[str, Any]:
-    """Versión segura de una apuesta guardada, para la web."""
-    from app.analysis.auditoria import objetivo_calibrado, version_segura
+    """Versión segura de una apuesta guardada, para la web.
+
+    La meta es siempre OBJETIVO_SEGURO (85%); la calibración corrige
+    cuánto confiar en cada estimación antes de compararla contra esa
+    meta, no la meta en sí -- ver `_prob_calibrada` en auditoria.py.
+    """
+    from app.analysis.auditoria import OBJETIVO_SEGURO, version_segura
     from app.analysis.probability import _buscar_jugador_cacheado
 
     guardada = get_active_bet(chat_id)
@@ -876,8 +881,7 @@ def mejorar_ticket(chat_id: int, ticket_id: str | None = None) -> dict[str, Any]
             return {"ok": False, "error": "No encontré esa apuesta."}
 
     legs = [leg for t in tickets for leg in t.get("legs", [])]
-    objetivo = objetivo_calibrado(chat_id)
-    tramos, combinada = version_segura(legs, objetivo)
+    tramos, combinada = version_segura(legs, OBJETIVO_SEGURO, chat_id)
 
     # Equipo de cada jugador, para que la web pueda mostrar de quién es
     # cada uno -- version_segura ya buscó a cada jugador para estimar
@@ -891,7 +895,7 @@ def mejorar_ticket(chat_id: int, ticket_id: str | None = None) -> dict[str, Any]
 
     return {
         "ok": True,
-        "objetivo": round(objetivo, 1),
+        "objetivo": OBJETIVO_SEGURO,
         "combinada": combinada,
         "tramos": [
             {

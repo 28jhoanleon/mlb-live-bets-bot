@@ -209,26 +209,31 @@ OBJETIVO_SEGURO = 85.0
 _MUESTRA_MINIMA_PARA_AJUSTAR = 20
 
 
-def objetivo_calibrado(chat_id: int) -> float:
-    """El objetivo de /mejorar, ajustado con datos reales si ya hay
-    suficientes.
+def _prob_calibrada(prob_cruda: float, chat_id: int | None) -> float:
+    """Corrige la probabilidad de UNA línea contra lo que en verdad pasó
+    en ese rango, si ya hay muestra.
 
-    OBJETIVO_SEGURO es matemática teórica: asume que cuando el modelo
-    dice "85%" de verdad acierta 85% de las veces. La calibración mide
-    si eso es cierto. Mientras el bucket 80-89% no junte muestra, se
-    usa el teórico; en cuanto la junte, se usa el real de ESE bucket --
-    que puede ser más bajo (sobreconfianza) o más alto.
-
-    Sin este ajuste alguien tendría que acordarse de volver a mirar la
-    calibración y cambiar el número a mano. Así se activa solo.
+    Ojo con la versión anterior de esto: bajaba la META (85% -> el real
+    del rango, por ejemplo 65%) en vez de corregir la ESTIMACIÓN. Con
+    esa versión, un modelo sobreconfiado hacía que /mejorar aceptara
+    MÁS líneas débiles, no menos -- el efecto contrario al buscado. Acá
+    se hace al revés: la meta queda fija en OBJETIVO_SEGURO, y lo que
+    se ajusta es cuánto confiar en la estimación cruda antes de
+    compararla contra esa meta. Si el modelo viene sobrevendiendo en
+    ese rango, esto la baja, y entonces hacen falta líneas MÁS flojas
+    (más seguras) para que una entre -- que es lo que "seguro" debería
+    significar.
     """
+    if chat_id is None:
+        return prob_cruda
+
     from app.db.database import calibracion
 
-    piso = int(OBJETIVO_SEGURO // 10 * 10)
+    piso = min(int(prob_cruda // 10 * 10), 90)
     for tramo in calibracion(chat_id):
         if tramo["tramo"] == f"{piso}-{piso + 9}%" and tramo["muestra"] >= _MUESTRA_MINIMA_PARA_AJUSTAR:
             return tramo["real_pct"]
-    return OBJETIVO_SEGURO
+    return prob_cruda
 
 
 @dataclass
@@ -246,8 +251,15 @@ class LegSegura:
     no_alcanza: bool = False
 
 
-def version_segura(legs_raw: list[dict], objetivo: float = OBJETIVO_SEGURO) -> tuple[list[LegSegura], float | None]:
+def version_segura(
+    legs_raw: list[dict], objetivo: float = OBJETIVO_SEGURO, chat_id: int | None = None,
+) -> tuple[list[LegSegura], float | None]:
     """Baja las líneas de cada tramo hasta alcanzar el objetivo.
+
+    La meta (`objetivo`) queda siempre fija: lo que se corrige, si hay
+    calibración con muestra suficiente, es la CONFIANZA en cada
+    estimación antes de compararla contra esa meta -- no la meta en sí.
+    Ver `_prob_calibrada` para el porqué.
 
     Devuelve (tramos, probabilidad combinada). La probabilidad combinada
     se calcula multiplicando, con la misma penalización por dependencia
@@ -276,21 +288,22 @@ def version_segura(legs_raw: list[dict], objetivo: float = OBJETIVO_SEGURO) -> t
         lado = actual.side if actual else "Over"
 
         # Del mismo lado, la línea MÁS exigente que igual llegue al
-        # objetivo. En Over eso es la más alta que cumpla; en Under, la
-        # más baja. Así se baja el riesgo sin regalar cuota de más.
+        # objetivo -- comparando la probabilidad CALIBRADA, no la
+        # cruda. Así se baja el riesgo sin regalar cuota de más.
         candidatas = [
             o for o in opciones
-            if o.side == lado and o.probabilidad_pct >= objetivo
+            if o.side == lado and _prob_calibrada(o.probabilidad_pct, chat_id) >= objetivo
         ]
         if not candidatas:
             # Ni la línea más floja llega al objetivo: se informa la
             # mejor disponible en vez de omitir el tramo en silencio.
-            candidatas = [max(opciones, key=lambda o: o.probabilidad_pct)]
+            candidatas = [max(opciones, key=lambda o: _prob_calibrada(o.probabilidad_pct, chat_id))]
 
         elegida = (
             max(candidatas, key=lambda o: o.linea) if lado == "Over"
             else min(candidatas, key=lambda o: o.linea)
         )
+        prob_mostrada = round(_prob_calibrada(elegida.probabilidad_pct, chat_id), 1)
 
         salidas.append(LegSegura(
             player=jugador,
@@ -298,9 +311,9 @@ def version_segura(legs_raw: list[dict], objetivo: float = OBJETIVO_SEGURO) -> t
             market=mercado,
             linea_original=linea,
             linea_nueva=f"{elegida.side} {elegida.linea:g}",
-            probabilidad=elegida.probabilidad_pct,
+            probabilidad=prob_mostrada,
             cambio=(actual is None or elegida.linea != actual.linea),
-            no_alcanza=elegida.probabilidad_pct < objetivo,
+            no_alcanza=prob_mostrada < objetivo,
         ))
 
     if not salidas:
