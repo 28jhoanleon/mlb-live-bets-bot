@@ -227,6 +227,7 @@ body{
 .mtramo.mal{color:var(--clay)}
 .mtramo.ok{color:var(--green)}
 .mtramo i{color:var(--muted);font-style:normal;font-size:11px}
+.mtramo__mercado{color:var(--muted);font-size:11px}
 .mejora__partido{margin-bottom:10px}
 .mejora__partido:last-of-type{margin-bottom:0}
 .mejora__partido-head{
@@ -1148,11 +1149,12 @@ async function verMejora(id, btn){
 
       const filas = tramos.map(t => {
         const equipo = aclararEquipo && t.equipo ? ` <i>(${esc(t.equipo)})</i>` : '';
-        if (t.no_alcanza) return `<div class="mtramo mal">❌ <b>${esc(t.player)}</b>${equipo} — `
+        const mercado = ` · <span class="mtramo__mercado">${esc(t.market)}</span>`;
+        if (t.no_alcanza) return `<div class="mtramo mal">❌ <b>${esc(t.player)}</b>${equipo}${mercado} — `
           + `ni con ${esc(t.linea_nueva)} pasa del ${esc(t.prob)}% · <i>sacala</i></div>`;
-        if (t.cambio) return `<div class="mtramo ok">🟢 <b>${esc(t.player)}</b>${equipo} — `
+        if (t.cambio) return `<div class="mtramo ok">🟢 <b>${esc(t.player)}</b>${equipo}${mercado} — `
           + `${esc(t.linea_original)} → <b>${esc(t.linea_nueva)}</b> · ${esc(t.prob)}%</div>`;
-        return `<div class="mtramo">✅ <b>${esc(t.player)}</b>${equipo} — `
+        return `<div class="mtramo">✅ <b>${esc(t.player)}</b>${equipo}${mercado} — `
           + `${esc(t.linea_nueva)} · ${esc(t.prob)}% <i>(ya estaba bien)</i></div>`;
       }).join('');
 

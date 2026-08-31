@@ -71,13 +71,7 @@ PRESUPUESTO_SEGUNDOS = 90
 # 2.5. Sugerirlas era inútil aunque el cálculo estuviera bien -- no se
 # pueden jugar. Además son tan fáciles que dan ~96% y disparan ventajas
 # falsas enormes.
-_LINEA_MINIMA = {
-    "pitcher_strikeouts": 1.5,
-    "pitcher_hits_allowed": 2.5,
-    "pitcher_earned_runs": 1.5,
-    "pitcher_outs": 8.5,
-    "pitcher_walks": 1.5,
-}
+from app.analysis.lineas_stake import LINEA_MINIMA as _LINEA_MINIMA  # noqa: E402
 
 # Techo de ventaja creíble. Un edge de +200% contra una casa real no
 # existe: si aparece, es un problema de datos (línea inexistente, precio
@@ -89,10 +83,9 @@ _EDGE_MAXIMO_CREIBLE = 40.0
 
 def _linea_existe(market_key: str, punto: float | None) -> bool:
     """¿La casa ofrece de verdad esta línea para este mercado?"""
-    if punto is None:
-        return True
-    minimo = _LINEA_MINIMA.get(market_key)
-    return minimo is None or punto >= minimo
+    from app.analysis.lineas_stake import linea_jugable
+
+    return linea_jugable(market_key, punto)
 
 
 def _pitcher_rival_de(event: dict, jugador: str) -> str | None:

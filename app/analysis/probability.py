@@ -504,10 +504,22 @@ def sugerir_lineas(
 
     # Candidatas: medios puntos alrededor de lo que el jugador viene
     # haciendo. Se acotan al rango observado para no listar líneas
-    # absurdas que ninguna casa va a ofrecer.
+    # absurdas que ninguna casa va a ofrecer, y además se descartan las
+    # que están por DEBAJO del mínimo real de Stake para ese mercado --
+    # sin este filtro podía sugerir, por ejemplo, "Over 1.5" outs de un
+    # abridor, cuando la casa arranca en 8.5: técnicamente una línea,
+    # pero tan floja que en la práctica paga casi 1.00.
+    from app.analysis.lineas_stake import linea_jugable
+
     tope = max(valores)
-    candidatas = [x + 0.5 for x in range(0, int(tope) + 1)]
+    candidatas = [
+        x + 0.5 for x in range(0, int(tope) + 1)
+        if linea_jugable(market_text, x + 0.5)
+    ]
     if threshold not in candidatas:
+        # Esta sí se agrega siempre: es la línea que de verdad se
+        # apostó, un hecho, no una sugerencia mía -- el filtro de
+        # jugabilidad es solo para lo que el bot propone de más.
         candidatas.append(threshold)
 
     return sorted(
