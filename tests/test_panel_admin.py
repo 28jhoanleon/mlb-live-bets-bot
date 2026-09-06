@@ -65,7 +65,7 @@ class TestNoQuedaronDuplicados:
         import re
 
         for fn in ("cargarMensajes", "renderPanelFuentes", "dejarFuente",
-                   "toggleFuentes", "borrarMensaje", "filtrarFuente", "enlazar"):
+                   "toggleFuentes", "borrarMensaje", "toggleAutorGrupo", "enlazar"):
             n = len(re.findall(rf"function {fn}\(", HTML))
             assert n == 1, f"{fn} tiene {n} definiciones"
 
@@ -147,3 +147,28 @@ class TestSepararPorPersona:
         i = HTML.index("async function quitarAutor(")
         bloque = HTML[i:i + 300]
         assert "confirm(" in bloque
+
+
+class TestVistaPorPersona:
+    """Pedido explícito: ver el contenido agrupado por quién lo manda,
+    no todo en una lista sola. Antes era una lista plana con pastillas
+    de filtro por origen (el chat entero); ahora es un acordeón por
+    autor, colapsado por default."""
+
+    def test_agrupa_por_autor_no_por_origen(self):
+        i = HTML.index("async function cargarMensajes()")
+        bloque = HTML[i:i + 1800]
+        assert "m.autor || m.origen" in bloque
+
+    def test_cada_grupo_arranca_colapsado(self):
+        i = HTML.index("async function cargarMensajes()")
+        bloque = HTML[i:i + 2500]
+        assert 'style="display:none"' in bloque
+
+    def test_muestra_cuantos_mensajes_tiene_cada_persona(self):
+        i = HTML.index("async function cargarMensajes()")
+        bloque = HTML[i:i + 2500]
+        assert "autor-grupo__cant" in bloque
+
+    def test_las_pastillas_de_filtro_viejas_ya_no_existen(self):
+        assert "function filtrarFuente(" not in HTML

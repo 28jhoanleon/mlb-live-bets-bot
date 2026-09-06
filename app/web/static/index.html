@@ -245,6 +245,23 @@ body{
 .ftag i{font-style:normal;margin-left:5px;opacity:.5;padding:0 2px}
 .ftag i:hover{opacity:1;color:var(--clay)}
 .msg__head .quitar{margin-left:6px;font-size:15px}
+.autor-grupo{margin:0 14px 10px;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.autor-grupo__head{
+  display:flex;justify-content:space-between;align-items:center;gap:10px;
+  padding:12px 14px;cursor:pointer;
+}
+.autor-grupo__quien{display:flex;flex-direction:column;gap:2px;min-width:0}
+.autor-grupo__quien b{font-size:13.5px}
+.autor-grupo__quien span{font-size:11px;color:var(--muted)}
+.autor-grupo__meta{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.autor-grupo__cant{
+  font-size:11px;color:var(--muted);background:var(--surface-2);
+  border-radius:20px;padding:2px 8px;
+}
+.autor-grupo__lista{border-top:1px solid var(--line);padding:10px 0 2px}
+.autor-grupo__lista .msg{margin:0 14px 10px;border:none;border-top:1px solid var(--line);
+  border-radius:0;padding:10px 0 0}
+.autor-grupo__lista .msg:first-child{border-top:none;padding-top:0}
 .msg{margin:0 14px 10px;padding:11px 13px;border:1px solid var(--line);border-radius:var(--r)}
 .panel-fuentes{margin:0 14px 18px;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
 .panel-fuentes__head{
@@ -1284,43 +1301,66 @@ async function cargarMensajes(){
     if (!(d.mensajes || []).length) {
       estado.innerHTML = 'Todavía no llegó ningún mensaje.<br><br>'
         + (_fuentes.length
-            ? 'Reaccioná (⭐ 🔥 ✅ 👍) a un mensaje de alguien para empezar a seguirlo.'
-            : 'Reenviale uno al bot desde Telegram para probar, o usá <code>/fuentes add</code>.');
+            ? 'Reaccioná (⭐ 🔥 ✅ 👍) o reenviá un mensaje de alguien para empezar a seguirlo.'
+            : 'Reenviale un mensaje al bot desde Telegram para probar, o usá <code>/fuentes add</code>.');
       document.getElementById('listaMensajes').innerHTML = '';
       return;
     }
     estado.hidden = true;
 
-    // Selector de fuente: con varios grupos seguidos, una lista sola
-    // vuelve a ser un chat entero. El botón de dejar de seguir vive en
-    // el panel de arriba, acá solo se filtra.
-    const origenes = [...new Set(d.mensajes.map(m => m.origen).filter(Boolean))];
-    const filtro = origenes.length > 1
-      ? `<div class="fuentes">
-           <button class="ftag activa" onclick="filtrarFuente(null,this)">Todas</button>
-           ${origenes.map(o =>
-             `<button class="ftag" onclick="filtrarFuente('${esc(o)}',this)">${esc(o)}</button>`
-           ).join('')}
-         </div>`
-      : '';
+    // Un acordeón POR PERSONA (o por origen si no se sabe quién lo
+    // mandó), cada uno colapsado por default. Antes era una lista
+    // sola con pastillas de filtro arriba -- con varias fuentes se
+    // sentía apelmazado, y no había forma de ver "todo lo de esta
+    // persona" de un vistazo sin scrollear entre lo de todos.
+    const grupos = {};
+    d.mensajes.forEach(m => {
+      const clave = m.autor || m.origen || '?';
+      (grupos[clave] = grupos[clave] || {origen: m.origen, mensajes: []}).mensajes.push(m);
+    });
 
-    document.getElementById('listaMensajes').innerHTML = filtro + d.mensajes.map(m => `
-      <div class="msg" data-origen="${esc(m.origen || '')}" data-id="${m.id}">
-        <div class="msg__head">
-          <b>${esc(m.origen || '?')}</b>
-          ${m.autor ? `<span>${esc(m.autor)}</span>` : ''}
-          <i>${esc((m.recibido_en || '').slice(5, 16).replace('T', ' '))}</i>
-          <button class="quitar" title="Borrar"
-                  onclick="borrarMensaje(${m.id}, this)">×</button>
+    const entradas = Object.entries(grupos).sort(
+      (a, b) => b[1].mensajes.length - a[1].mensajes.length
+    );
+
+    document.getElementById('listaMensajes').innerHTML = entradas.map(([autor, grupo], idx) => `
+      <div class="autor-grupo">
+        <div class="autor-grupo__head" onclick="toggleAutorGrupo(${idx})">
+          <div class="autor-grupo__quien">
+            <b>${esc(autor)}</b>
+            <span>en ${esc(grupo.origen || '?')}</span>
+          </div>
+          <div class="autor-grupo__meta">
+            <span class="autor-grupo__cant">${grupo.mensajes.length}</span>
+            <span id="flechaAutor${idx}">▸</span>
+          </div>
         </div>
-        ${m.tiene_foto ? `<img class="msg__foto" loading="lazy"
-             src="/api/mensaje-foto?id=${m.id}&k=${encodeURIComponent(KEY)}"
-             onclick="window.open(this.src,'_blank')">` : ''}
-        <div class="msg__txt">${enlazar(esc(m.texto))}</div>
+        <div id="autorGrupo${idx}" class="autor-grupo__lista" style="display:none">
+          ${grupo.mensajes.map(m => `
+            <div class="msg" data-id="${m.id}">
+              <div class="msg__head">
+                <i>${esc((m.recibido_en || '').slice(5, 16).replace('T', ' '))}</i>
+                <button class="quitar" title="Borrar"
+                        onclick="borrarMensaje(${m.id}, this)">×</button>
+              </div>
+              ${m.tiene_foto ? `<img class="msg__foto" loading="lazy"
+                   src="/api/mensaje-foto?id=${m.id}&k=${encodeURIComponent(KEY)}"
+                   onclick="window.open(this.src,'_blank')">` : ''}
+              <div class="msg__txt">${enlazar(esc(m.texto))}</div>
+            </div>`).join('')}
+        </div>
       </div>`).join('');
   } catch (e) {
     estado.textContent = 'No pude traer los mensajes: ' + e.message;
   }
+}
+
+function toggleAutorGrupo(idx){
+  const lista = document.getElementById(`autorGrupo${idx}`);
+  const flecha = document.getElementById(`flechaAutor${idx}`);
+  const colapsado = lista.style.display === 'none';
+  lista.style.display = colapsado ? '' : 'none';
+  flecha.textContent = colapsado ? '▾' : '▸';
 }
 
 // Panel de administración: qué fuentes seguís, con qué filtros, y
@@ -1437,14 +1477,6 @@ function enlazar(textoEscapado){
       return `<a href="${href}" target="_blank" rel="noopener">${m}</a>`;
     }
   );
-}
-
-function filtrarFuente(origen, btn){
-  document.querySelectorAll('.ftag').forEach(b => b.classList.remove('activa'));
-  btn.classList.add('activa');
-  document.querySelectorAll('.msg').forEach(m => {
-    m.hidden = origen !== null && m.dataset.origen !== origen;
-  });
 }
 
 async function borrarMensaje(id, btn){

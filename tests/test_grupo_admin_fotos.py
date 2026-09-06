@@ -149,7 +149,7 @@ class TestLinksClickeables:
         import re
 
         html = pathlib.Path("app/web/static/index.html").read_text()
-        for fn in ("borrarMensaje", "dejarFuente", "filtrarFuente", "cargarMensajes"):
+        for fn in ("borrarMensaje", "dejarFuente", "toggleAutorGrupo", "cargarMensajes"):
             assert len(re.findall(rf"function {fn}\(", html)) == 1, fn
 
 

@@ -74,4 +74,4 @@ class TestEnLaWeb:
         import pathlib
 
         html = pathlib.Path("app/web/static/index.html").read_text()
-        assert "Reenviale uno al bot" in html
+        assert "Reenviale un mensaje al bot" in html
