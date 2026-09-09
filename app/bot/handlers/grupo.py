@@ -9,15 +9,17 @@ sesión no conoce bien un chat todavía, y no siempre identifica a quien
 postea como administrador anónimo. Cada uno de esos casos se fue
 arreglando, pero siguen siendo puntos frágiles.
 
-Reenviar un mensaje al bot NO tiene ninguno de esos problemas: es una
-función básica de la API de bots de Telegram, funciona desde CUALQUIER
-chat (grupo, canal, chat privado), y siempre trae quién lo mandó (salvo
-que esa persona haya activado el reenvío anónimo, en cuyo caso Telegram
-no da ese dato a nadie, ni a este bot ni a ningún otro).
+Reenviar tiene su propia limitación, distinta y más dura: cuando
+reenviás el mensaje de una persona común (el caso más frecuente, ni
+canal ni admin anónimo), la API de bots de Telegram directamente NO le
+da al bot ningún dato de EN QUÉ CHAT estaba ese mensaje -- por
+privacidad, solo entrega quién lo mandó. No hay forma de rodear esto
+con código: es una decisión de diseño de Telegram.
 
-Así que ahora reenviar hace lo mismo que reaccionar -- arranca o suma a
-esa persona a la lista de gente seguida en ese chat -- pero por una vía
-que no depende de la sesión de usuario ni de la API de reacciones.
+La solución: en ese caso se sigue a la persona con el comodín "*" (ver
+GRUPO_COMODIN), que significa "en cualquier chat donde la sesión la
+vea". Es, de hecho, mejor que atarlo a un solo grupo -- es lo que en
+realidad se pidió: seguir a alguien sea de donde sea el contenido.
 """
 from __future__ import annotations
 
@@ -52,11 +54,22 @@ def _normalizar_id_chat(chat_id: int) -> str:
     return texto.lstrip("-")
 
 
+GRUPO_COMODIN = "*"  # "cualquier chat" -- ver _es_el_grupo en app.lector.cliente
+
+
 def _identificar(update: Update) -> tuple[str, str | None, int | None, str | None]:
     """(nombre para mostrar, nombre del autor, id del autor, handle del
-    chat de origen). El handle es @usuario si el chat es público, o el
-    id normalizado si no -- lo que haga falta para que el lector lo
-    reconozca después."""
+    chat de origen).
+
+    El handle sale así, en orden de preferencia:
+    - @usuario si el chat de origen es público
+    - el id normalizado si no, pero SOLO se conoce cuando el mensaje
+      viene de un canal o de un admin posteando como anónimo -- son los
+      dos únicos casos donde Telegram le da esa info al bot
+    - el comodín "*" en el caso más común de todos: alguien común
+      reenviando un mensaje de otra persona común. Ahí la API de bots
+      NO expone en qué chat estaba -- ver el módulo docstring.
+    """
     msg = update.effective_message
     origen = getattr(update.effective_chat, "title", None) or "reenviado"
     autor = None
@@ -78,6 +91,10 @@ def _identificar(update: Update) -> tuple[str, str | None, int | None, str | Non
     if usuario is not None:
         autor = getattr(usuario, "full_name", None)
         autor_id = usuario.id
+        if handle is None:
+            # El caso común: persona reenviando de una persona. Sin
+            # dato del chat, se sigue a la persona en cualquier lado.
+            handle = GRUPO_COMODIN
     else:
         # Admin posteando como anónimo: Telegram lo da como un chat, no
         # como usuario.
@@ -132,7 +149,8 @@ async def capturar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     activado = False
     if handle and autor_id is not None:
-        _activar_seguimiento(origen, handle, autor, autor_id)
+        nombre_fuente = "Seguidos por reenvío (cualquier chat)" if handle == GRUPO_COMODIN else origen
+        _activar_seguimiento(nombre_fuente, handle, autor, autor_id)
         activado = True
 
     # Confirmar solo si lo reenviaste vos: en un canal el bot no debería
@@ -140,7 +158,8 @@ async def capturar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.channel_post is None:
         aviso = f"Guardado de *{origen}*"
         if activado:
-            aviso += f"\n\nDe ahí en más sigo a *{autor or 'esa persona'}* ahí automáticamente."
+            donde = "en cualquier chat" if handle == GRUPO_COMODIN else "ahí"
+            aviso += f"\n\nDe ahí en más sigo a *{autor or 'esa persona'}* {donde} automáticamente."
         try:
             await msg.reply_text(aviso, parse_mode="Markdown")
         except Exception:

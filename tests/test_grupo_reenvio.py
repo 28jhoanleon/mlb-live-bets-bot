@@ -153,3 +153,61 @@ class TestCapturarActivaElSeguimiento:
 
         texto_aviso = u.effective_message.reply_text.call_args.args[0]
         assert "sigo a" in texto_aviso.lower()
+
+
+class TestComodinCuandoNoHayDatoDelChat:
+    """El descubrimiento clave: cuando reenviás el mensaje de una
+    persona común (no canal, no admin anónimo), la API de bots de
+    Telegram NO le da al bot ningún dato de en qué chat estaba ese
+    mensaje. Es privacidad de Telegram, no algo que se pueda evitar.
+
+    La solución: seguir a esa persona con el comodín "*" -- en
+    cualquier chat donde la sesión la vea -- que además es justo lo
+    que se pidió ("seguir sea de donde sea el contenido")."""
+
+    def test_persona_comun_sin_chat_usa_el_comodin(self):
+        u = _update_reenviado(chat_username=None, chat_id=None)
+        _, _, _, handle = _identificar(u)
+        assert handle == "*"
+
+    def test_canal_o_admin_anonimo_sigue_usando_el_chat_real(self):
+        """Cuando SÍ hay dato del chat (porque es canal o admin
+        anónimo), no hace falta el comodín -- es más preciso atarlo al
+        chat real."""
+        u = _update_reenviado(chat_username="ludogallina2024")
+        _, _, _, handle = _identificar(u)
+        assert handle == "ludogallina2024"
+
+    def test_capturar_crea_la_fuente_comodin(self, db):
+        import asyncio
+
+        from app.bot.handlers.grupo import capturar
+
+        u = _update_reenviado(chat_username=None, chat_id=None)
+        u.effective_message.reply_text = _AsyncMock()
+
+        asyncio.run(capturar(u, None))
+
+        fuentes = db.listar_fuentes()
+        assert len(fuentes) == 1
+        assert fuentes[0]["grupo"] == "*"
+
+    def test_el_lector_reconoce_el_comodin_como_cualquier_chat(self):
+        from app.lector.cliente import _es_el_grupo
+
+        assert _es_el_grupo(None, "*") is True
+
+        import types
+
+        cualquier_chat = types.SimpleNamespace(username="lo-que-sea", id=999)
+        assert _es_el_grupo(cualquier_chat, "*") is True
+
+    def test_el_mensaje_capturado_por_comodin_conserva_el_chat_real(self):
+        """Aunque la fuente sea el comodín, el mensaje guardado tiene
+        que decir de qué chat vino de verdad -- si no, todo lo
+        capturado por reenvío se ve igual sin importar el origen."""
+        import pathlib
+
+        fuente = pathlib.Path("app/lector/cliente.py").read_text()
+        assert 'fuente["grupo"] == "*"' in fuente
+        assert "getattr(chat, \"title\", None) or fuente[\"nombre\"]" in fuente

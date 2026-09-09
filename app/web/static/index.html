@@ -1412,10 +1412,14 @@ async function renderPanelFuentes(){
               const [id, ...resto] = par.split(':');
               return {id, nombre: resto.join(':') || `usuario sin nombre (${id})`};
             });
+            const esComodin = f.grupo === '*';
+            const subtitulo = esComodin
+              ? 'en cualquier chat · por reenvío 📩'
+              : `en @${esc(f.grupo)} · por reacción ⭐`;
             return `
             <div class="fuente-row fuente-row--grupo">
               <div class="fuente-row__cabecera">
-                <span class="fuente-row__grupo">en @${esc(f.grupo)} · por reacción ⭐</span>
+                <span class="fuente-row__grupo">${subtitulo}</span>
                 <button class="fuente-row__quitar-chica" onclick="dejarFuente('${esc(f.nombre)}')">
                   Dejar de seguir a todos
                 </button>

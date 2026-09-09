@@ -129,18 +129,18 @@ class TestSepararPorPersona:
 
     def test_cada_persona_es_su_propio_chip(self):
         i = HTML.index("async function renderPanelFuentes()")
-        bloque = HTML[i:i + 2500]
+        bloque = HTML[i:HTML.index("function _describirFiltros")]
         assert "autor-chip" in bloque
         assert "personas.map(" in bloque
 
     def test_cada_chip_tiene_su_propia_x(self):
         i = HTML.index("async function renderPanelFuentes()")
-        bloque = HTML[i:i + 2500]
+        bloque = HTML[i:HTML.index("function _describirFiltros")]
         assert "quitarAutor(" in bloque
 
     def test_tambien_hay_opcion_de_sacar_a_todos_de_una(self):
         i = HTML.index("async function renderPanelFuentes()")
-        bloque = HTML[i:i + 2500]
+        bloque = HTML[i:HTML.index("function _describirFiltros")]
         assert "Dejar de seguir a todos" in bloque
 
     def test_quitarAutor_pide_confirmacion(self):
@@ -162,12 +162,12 @@ class TestVistaPorPersona:
 
     def test_cada_grupo_arranca_colapsado(self):
         i = HTML.index("async function cargarMensajes()")
-        bloque = HTML[i:i + 2500]
+        bloque = HTML[i:HTML.index("function _describirFiltros")]
         assert 'style="display:none"' in bloque
 
     def test_muestra_cuantos_mensajes_tiene_cada_persona(self):
         i = HTML.index("async function cargarMensajes()")
-        bloque = HTML[i:i + 2500]
+        bloque = HTML[i:HTML.index("function _describirFiltros")]
         assert "autor-grupo__cant" in bloque
 
     def test_las_pastillas_de_filtro_viejas_ya_no_existen(self):

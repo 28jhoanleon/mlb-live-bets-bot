@@ -13,7 +13,11 @@ La sesión que esto usa da acceso a TODO tu Telegram, no solo a este
 grupo. Si alguien accede al servidor, accede a tus chats. Por eso el
 módulo está escrito con estas reglas, que no son opcionales:
 
-- SOLO LEE. No manda mensajes, no responde, no se une ni sale de nada.
+- SOLO LEE, con UNA excepción explícita: al reaccionar, se manda una
+  confirmación a "Mensajes guardados" (tu chat con vos mismo), y solo
+  ahí -- nunca a un grupo o canal ajeno. Es la única función de
+  escritura que existe en este módulo, y el destino está fijo en el
+  código, no es configurable.
 - SOLO ESE GRUPO. Los mensajes de cualquier otro chat se descartan sin
   guardarse ni registrarse.
 - Sin las variables de entorno configuradas, no hace absolutamente
@@ -77,6 +81,22 @@ def _nombre_de(remitente) -> str | None:
         return f"@{usuario}"
 
     return None
+
+
+async def _confirmar(cliente, texto: str) -> None:
+    """Manda una confirmación a "Mensajes guardados" -- tu chat con vos
+    mismo en Telegram, nunca a un grupo ajeno.
+
+    Esta es la ÚNICA excepción a "el lector nunca escribe": sin esto,
+    reaccionar no daba ninguna señal de que algo pasó, y no había forma
+    de saber si funcionó sin mirar la web o los logs de Railway. El
+    destino está fijo en el código como `'me'` -- no es un parámetro,
+    no se puede apuntar a otro lado por error ni por un bug futuro.
+    """
+    try:
+        await cliente.send_message("me", texto, parse_mode="markdown")
+    except Exception:
+        log.exception("No pude mandar la confirmación a Mensajes guardados")
 
 
 def _texto_con_links(mensaje) -> str:
@@ -223,8 +243,16 @@ def _fuente_de(chat, fuentes: list[dict]) -> dict | None:
 def _es_el_grupo(chat, esperado: str) -> bool:
     """¿El mensaje vino del grupo configurado y no de otro chat?
 
-    Se compara por username y por id. Cualquier otro origen se descarta:
-    la sesión ve TODOS tus chats y no queremos guardar nada más."""
+    "*" es el comodín de "cualquier chat" -- se usa para el
+    seguimiento activado por reenvío cuando Telegram no le da al bot
+    el dato de en qué grupo estaba el mensaje original (pasa siempre
+    que quien lo mandó es una persona común, no un canal ni un admin
+    anónimo: ahí la API de bots solo entrega quién lo mandó, nunca de
+    dónde). Sin este comodín, ese caso -- el más común -- no podía
+    armar ningún seguimiento automático.
+    """
+    if esperado == "*":
+        return True
     if chat is None:
         return False
 
@@ -331,6 +359,7 @@ async def escuchar() -> None:
             # cada vez. Se guarda por ID, no por nombre -- el nombre es
             # ambiguo (dos personas pueden llamarse "Leandro"), el id no.
             handle = getattr(chat, "username", None) or str(getattr(chat, "id", ""))
+            es_nuevo_seguimiento = fuente is None
             if fuente is None:
                 nombre = getattr(chat, "title", None) or handle
                 ids = f"{autor_id}:{autor or ''}" if autor_id is not None else ""
@@ -355,6 +384,11 @@ async def escuchar() -> None:
                 "Guardado por reacción %s de %s en %s -- seguimiento activado",
                 emoji, autor or "?", origen,
             )
+
+            aviso = f"{emoji} Guardado de *{origen}*"
+            if es_nuevo_seguimiento and autor:
+                aviso += f"\n\nDe ahí en más sigo a *{autor}* ahí automáticamente."
+            await _confirmar(cliente, aviso)
         except Exception:
             log.exception("Error procesando una reacción")
 
@@ -390,10 +424,20 @@ async def escuchar() -> None:
 
             foto = await _descargar_si_hay(cliente, evento.message) if con_foto else None
 
-            await asyncio.to_thread(
-                guardar_mensaje_grupo, fuente["nombre"], autor, texto, foto
+            # Con el comodín, una misma fuente cubre TODOS los chats, así
+            # que su nombre fijo no dice nada útil sobre el origen
+            # puntual de este mensaje -- se usa el título del chat real
+            # en su lugar, igual que en cualquier otra fuente.
+            chat = await evento.get_chat()
+            origen = (
+                (getattr(chat, "title", None) or fuente["nombre"])
+                if fuente["grupo"] == "*" else fuente["nombre"]
             )
-            log.info("Guardado de %s (%d caracteres)", fuente["nombre"], len(texto))
+
+            await asyncio.to_thread(
+                guardar_mensaje_grupo, origen, autor, texto, foto
+            )
+            log.info("Guardado de %s (%d caracteres)", origen, len(texto))
         except Exception:
             log.exception("Error procesando un mensaje del grupo")
 

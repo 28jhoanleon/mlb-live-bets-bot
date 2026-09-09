@@ -49,10 +49,23 @@ class TestSoloEseGrupo:
 
 
 class TestSoloLectura:
-    def test_no_manda_mensajes(self):
-        """El lector nunca debe escribir: ni responder, ni reenviar."""
-        for prohibido in ("send_message", "send_file", "reply(", "forward_messages"):
+    def test_no_manda_mensajes_a_grupos_ajenos(self):
+        """La única excepción es la confirmación a uno mismo
+        (_confirmar), y esa manda siempre a 'me' -- nunca reenvía,
+        nunca responde en el grupo, nunca escribe donde no debe."""
+        for prohibido in ("send_file", "reply(", "forward_messages"):
             assert prohibido not in FUENTE, f"el lector usa {prohibido}"
+
+    def test_la_unica_funcion_que_escribe_apunta_siempre_a_uno_mismo(self):
+        """send_message solo puede aparecer dentro de _confirmar, y
+        siempre con destino fijo 'me' -- no un parámetro, no algo que
+        un bug futuro pueda apuntar a otro lado."""
+        i = FUENTE.index("async def _confirmar(")
+        j = FUENTE.index("\n\n\n", i)
+        cuerpo = FUENTE[i:j]
+        resto = FUENTE[:i] + FUENTE[j:]
+        assert "send_message" not in resto
+        assert 'send_message("me"' in cuerpo
 
     def test_no_se_une_ni_sale_de_chats(self):
         for prohibido in ("JoinChannelRequest", "LeaveChannelRequest", "delete_messages"):
@@ -326,3 +339,29 @@ class TestLogsVisiblesEnRailway:
         assert "No pude identificar cuál emoji" in bloque
         assert "no está en la lista configurada" in bloque
         assert "get_messages no devolvió" in bloque
+
+
+class TestConfirmacionAlReaccionar:
+    """Pedido explícito: confirmación en Telegram al reaccionar, igual
+    que ya existía al reenviar. Única excepción documentada a "el
+    lector nunca escribe" -- y acotada a mandarse mensajes a uno
+    mismo, nunca a terceros."""
+
+    def test_se_llama_despues_de_guardar_el_mensaje(self):
+        i = FUENTE.index("guardar_mensaje_grupo, origen, autor, texto or")
+        j = FUENTE.index("_confirmar(cliente, aviso)")
+        assert i < j
+
+    def test_avisa_si_empezo_a_seguir_a_alguien_nuevo(self):
+        i = FUENTE.index("async def _reaccion(update):")
+        j = FUENTE.index("except Exception:\n            log.exception(\"Error procesando una reacción\")")
+        bloque = FUENTE[i:j]
+        assert "es_nuevo_seguimiento" in bloque
+        assert "De ahí en más sigo a" in bloque
+
+    def test_un_fallo_al_confirmar_no_rompe_el_guardado(self):
+        """Si Telegram no deja mandar el mensaje por algún motivo, el
+        mensaje del grupo ya se guardó -- eso no puede perderse."""
+        i = FUENTE.index("async def _confirmar(")
+        bloque = FUENTE[i:i + 700]
+        assert "except Exception:" in bloque
