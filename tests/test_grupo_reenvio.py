@@ -211,3 +211,42 @@ class TestComodinCuandoNoHayDatoDelChat:
         fuente = pathlib.Path("app/lector/cliente.py").read_text()
         assert 'fuente["grupo"] == "*"' in fuente
         assert "getattr(chat, \"title\", None) or fuente[\"nombre\"]" in fuente
+
+
+class TestDiagnosticoCompleto:
+    """El log real que se recibió mostraba que el mensaje SÍ se
+    guardó, pero no había ningún rastro de si el seguimiento se activó
+    o no -- faltaba el log, no la lógica. Con esto, el próximo log va
+    a decir la verdad completa en un solo vistazo."""
+
+    def test_hay_log_de_diagnostico_despues_de_identificar(self):
+        import pathlib
+
+        fuente = pathlib.Path("app/bot/handlers/grupo.py").read_text()
+        assert "Identificado: autor=" in fuente
+
+    def test_confirma_cuando_crea_fuente_nueva(self):
+        import pathlib
+
+        fuente = pathlib.Path("app/bot/handlers/grupo.py").read_text()
+        i = fuente.index("def _activar_seguimiento")
+        bloque = fuente[i:i + 900]
+        assert "Fuente nueva creada" in bloque
+
+    def test_confirma_cuando_suma_a_una_existente(self):
+        import pathlib
+
+        fuente = pathlib.Path("app/bot/handlers/grupo.py").read_text()
+        i = fuente.index("def _activar_seguimiento")
+        bloque = fuente[i:i + 900]
+        assert "sumado a la fuente existente" in bloque
+
+    def test_avisa_cuando_es_privacidad_del_remitente_original(self):
+        """Caso distinto a todos los anteriores: si quien ESCRIBIÓ el
+        mensaje original tiene reenvíos restringidos en su privacidad,
+        Telegram oculta su id a cualquiera que reenvíe -- no hay forma
+        de sortear esto con código."""
+        import pathlib
+
+        fuente = pathlib.Path("app/bot/handlers/grupo.py").read_text()
+        assert "privacidad de esa" in fuente.lower() or "privacidad de la persona" in fuente.lower()

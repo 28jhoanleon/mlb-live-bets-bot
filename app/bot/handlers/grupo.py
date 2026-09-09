@@ -103,10 +103,19 @@ def _identificar(update: Update) -> tuple[str, str | None, int | None, str | Non
             autor = getattr(sender_chat, "title", None)
             autor_id = getattr(sender_chat, "id", None)
         else:
-            # Privacidad de reenvío activada: solo el nombre, sin id.
-            # No se puede armar seguimiento automático sin id -- se
-            # guarda igual el mensaje puntual, pero no arranca nada.
+            # Privacidad de reenvío activada -- pero OJO, de quién:
+            # esto es la configuración de privacidad de la persona que
+            # ESCRIBIÓ el mensaje original, no la tuya. Si esa persona
+            # tiene "reenvíos" restringido en Ajustes > Privacidad,
+            # Telegram le oculta su identidad a CUALQUIERA que reenvíe
+            # su mensaje -- a este bot y a cualquier otro. Da el
+            # nombre nada más, sin id, y sin id no hay forma de armar
+            # un seguimiento automático confiable.
             autor = getattr(reenvio, "sender_user_name", None)
+            log.info(
+                "Reenvío sin id del autor original (privacidad de esa "
+                "persona) -- se guarda el mensaje, no se arma seguimiento"
+            )
 
     return origen, autor, autor_id, handle
 
@@ -124,8 +133,10 @@ def _activar_seguimiento(nombre: str, handle: str, autor: str | None, autor_id: 
                 nombre, handle, autor or "", False, False, "", "", True,
                 f"{autor_id}:{autor or ''}",
             )
+            log.info("Fuente nueva creada: %s (%s), autor %s", nombre, handle, autor)
         else:
             agregar_autor_a_fuente(existente["grupo"], autor, autor_id)
+            log.info("Autor %s sumado a la fuente existente %s", autor, existente["grupo"])
     except Exception:
         log.exception("No pude activar el seguimiento automático")
 
@@ -146,6 +157,11 @@ async def capturar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     log.info("Mensaje capturado de %s (%d caracteres)", origen, len(texto))
+    log.info(
+        "Identificado: autor=%r autor_id=%r handle=%r -- %s",
+        autor, autor_id, handle,
+        "activa seguimiento" if (handle and autor_id is not None) else "NO activa seguimiento",
+    )
 
     activado = False
     if handle and autor_id is not None:
