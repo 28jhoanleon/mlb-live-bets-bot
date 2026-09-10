@@ -17,6 +17,15 @@ from app.utils.telegram_helpers import escape_md
 
 log = get_logger(__name__)
 
+def _es_link_invitacion(grupo: str) -> bool:
+    """¿Es un link de invitación (t.me/+hash o joinchat/hash) en vez de
+    un @usuario? Ese formato no se puede usar como identificador: no
+    trae ni @usuario ni id, así que guardarlo tal cual deja una fuente
+    que nunca va a reconocer ningún mensaje."""
+    bajo = grupo.strip().lower()
+    return "t.me/+" in bajo or "joinchat/" in bajo or bajo.startswith("+")
+
+
 _AYUDA = """*Fuentes de picks*
 
 `/fuentes` — ver las configuradas
@@ -94,6 +103,18 @@ async def fuentes_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     grupo = args[1]
+    if _es_link_invitacion(grupo):
+        # Un link de invitación (t.me/+hash o joinchat/hash) no sirve
+        # como identificador: no tiene @usuario ni id resoluble desde
+        # ahí. Guardarlo tal cual deja una fuente que nunca va a
+        # matchear nada -- pasó de verdad, quedó una fuente muerta sin
+        # que nadie se diera cuenta.
+        await update.message.reply_text(
+            "Ese es un link de invitación, no puedo usarlo para identificar "
+            "el grupo. Pasame el @usuario si el grupo es público, o "
+            "reenviame/reaccioname un mensaje de ahí para seguirlo así.",
+        )
+        return
     autores, palabras, casas = "", "", ""
     foto = link = False
     nombre_partes = []

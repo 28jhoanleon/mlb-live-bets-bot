@@ -240,6 +240,9 @@ def _fuente_de(chat, fuentes: list[dict]) -> dict | None:
     return None
 
 
+GRUPO_COMODIN = "*"  # "cualquier chat" -- misma fuente que usa app.bot.handlers.grupo
+
+
 def _es_el_grupo(chat, esperado: str) -> bool:
     """¿El mensaje vino del grupo configurado y no de otro chat?
 
@@ -350,30 +353,29 @@ async def escuchar() -> None:
                 pass
 
             chat = await mensaje.get_chat()
-            fuentes = await asyncio.to_thread(listar_fuentes)
-            fuente = _fuente_de(chat, fuentes)
+            titulo_chat = getattr(chat, "title", None) or "este chat"
 
-            # Reaccionar significa "seguí a esta persona de acá en más":
-            # de este grupo, sus mensajes con foto o link (los que
-            # parecen apuesta) se guardan solos, sin reaccionar de nuevo
-            # cada vez. Se guarda por ID, no por nombre -- el nombre es
-            # ambiguo (dos personas pueden llamarse "Leandro"), el id no.
-            handle = getattr(chat, "username", None) or str(getattr(chat, "id", ""))
+            # Reaccionar significa "seguí a esta persona sea de donde
+            # sea": se busca la fuente comodín ("*", la misma que usa
+            # el reenvío) en vez de una atada a este chat puntual. Antes
+            # reaccionar creaba una fuente POR GRUPO y reenviar creaba
+            # la fuente comodín aparte -- dos listas distintas para el
+            # mismo propósito, confuso. Ahora es una sola.
+            fuentes = await asyncio.to_thread(listar_fuentes)
+            fuente = next((f for f in fuentes if f["grupo"] == GRUPO_COMODIN), None)
+
             es_nuevo_seguimiento = fuente is None
             if fuente is None:
-                nombre = getattr(chat, "title", None) or handle
                 ids = f"{autor_id}:{autor or ''}" if autor_id is not None else ""
                 await asyncio.to_thread(
-                    agregar_fuente, nombre, handle, autor or "", False, False,
-                    "", "", True, ids,
+                    agregar_fuente, "Seguidos (cualquier chat)", GRUPO_COMODIN,
+                    autor or "", False, False, "", "", True, ids,
                 )
-                origen = nombre
-            else:
-                if autor:
-                    await asyncio.to_thread(
-                        agregar_autor_a_fuente, fuente["grupo"], autor, autor_id,
-                    )
-                origen = fuente["nombre"]
+            elif autor:
+                await asyncio.to_thread(
+                    agregar_autor_a_fuente, GRUPO_COMODIN, autor, autor_id,
+                )
+            origen = titulo_chat
 
             foto = await _descargar_si_hay(cliente, mensaje) if con_foto else None
 
@@ -387,7 +389,7 @@ async def escuchar() -> None:
 
             aviso = f"{emoji} Guardado de *{origen}*"
             if es_nuevo_seguimiento and autor:
-                aviso += f"\n\nDe ahí en más sigo a *{autor}* ahí automáticamente."
+                aviso += f"\n\nDe ahí en más sigo a *{autor}* en cualquier chat, automáticamente."
             await _confirmar(cliente, aviso)
         except Exception:
             log.exception("Error procesando una reacción")

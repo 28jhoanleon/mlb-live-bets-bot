@@ -192,13 +192,13 @@ class TestCapturaPorReaccion:
         assert "💩" not in _emojis_configurados()
 
     def test_funciona_aunque_el_chat_no_sea_fuente(self):
-        """Si marcás algo de un grupo que todavía no seguís, ahora SÍ
-        empieza a seguirse: reaccionar es la forma de decir "seguí a
-        esta persona de acá en más"."""
+        """Reaccionar sigue a la persona en cualquier chat -- usa la
+        fuente comodín ("*"), la misma que usa el reenvío."""
         import pathlib
 
         fuente = pathlib.Path("app/lector/cliente.py").read_text()
-        assert "agregar_fuente, nombre, handle, autor" in fuente
+        assert 'f["grupo"] == GRUPO_COMODIN' in fuente
+        assert '"Seguidos (cualquier chat)", GRUPO_COMODIN' in fuente
 
 
 class TestSoloApuestas:
@@ -350,3 +350,45 @@ class TestQuitarUnaPersonaSinAfectarAlResto:
 
     def test_grupo_inexistente_no_rompe(self, db):
         assert db.quitar_autor_de_fuente("no-existe", 111) == "nada"
+
+
+class TestRechazarLinkDeInvitacion:
+    """Bug real, encontrado en un log de producción: una fuente quedó
+    guardada con grupo="https://t.me/+G7ZAm3qKrqZjYTUx" (un link de
+    invitación completo), que nunca puede matchear contra ningún chat
+    -- la comparación busca @usuario o id, no una URL de invitación.
+    Esa fuente estaba muerta desde que se creó, sin que nadie avisara."""
+
+    def test_detecta_link_con_mas(self):
+        from app.bot.handlers.fuentes import _es_link_invitacion
+
+        assert _es_link_invitacion("https://t.me/+G7ZAm3qKrqZjYTUx")
+
+    def test_detecta_joinchat(self):
+        from app.bot.handlers.fuentes import _es_link_invitacion
+
+        assert _es_link_invitacion("t.me/joinchat/AbCdEfG")
+
+    def test_un_usuario_normal_no_se_confunde(self):
+        from app.bot.handlers.fuentes import _es_link_invitacion
+
+        assert not _es_link_invitacion("ludogallina2024")
+        assert not _es_link_invitacion("@ludogallina2024")
+
+    def test_un_id_numerico_no_se_confunde(self):
+        from app.bot.handlers.fuentes import _es_link_invitacion
+
+        assert not _es_link_invitacion("-1001234567890")
+
+
+class TestReaccionarYReenviarUsanLaMismaLista:
+    """Unificado: ya no hay una lista "por reacción" separada de una
+    "por reenvío" -- las dos alimentan la misma fuente comodín."""
+
+    def test_cliente_usa_el_mismo_comodin_que_grupo(self):
+        import pathlib
+
+        de_cliente = pathlib.Path("app/lector/cliente.py").read_text()
+        de_grupo = pathlib.Path("app/bot/handlers/grupo.py").read_text()
+        assert 'GRUPO_COMODIN = "*"' in de_cliente
+        assert 'GRUPO_COMODIN = "*"' in de_grupo
